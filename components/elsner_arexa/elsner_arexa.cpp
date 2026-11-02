@@ -141,24 +141,35 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
   bool in_step = first_bad == 33;
   for (int k = 25; k < 33 && !in_step; k++)
     in_step = k > first_bad && !bad[k] && !bad[k - 1] && v[k] == 0x30;
-  bool ok[33] = {false};
-  for (int k = 5; k < 33; k++)
-    ok[k] = !bad[k] && !bad[k - 1] && (k < first_bad || in_step);
+  // clean: the value's own bytes arrived without a broken pair; ok: also in step (fields without a check of their own)
+  bool clean[33] = {false}, ok[33] = {false};
+  for (int k = 5; k < 33; k++) {
+    clean[k] = !bad[k] && !bad[k - 1];
+    ok[k] = clean[k] && (k < first_bad || in_step);
+  }
   auto have = [&ok](int from, int to) {
     for (int k = from; k <= to; k++)
       if (!ok[k])
         return false;
     return true;
   };
-  if (!have(5, 16))
-    return;  // the counter and the addresses
+  // the sender: byte 10, or else byte 15 (the receiver: the RC and the station talk only to each other)
+  uint8_t sender;
+  if (ok[10])
+    sender = v[10];
+  else if (ok[15] && this->learned_ && (v[15] == this->rc_address_ || v[15] == this->station_address_))
+    sender = v[15] == this->rc_address_ ? this->station_address_ : this->rc_address_;
+  else
+    return;
 
   // the counter (RC and station share it): v5 counts down, v6 = k - 2 v5, v7 changes rarely
-  this->v5_ = v[5];
-  this->v7_ = v[7];
-  this->k_ = v[6] + 2 * v[5];
+  if (have(5, 7)) {
+    this->v5_ = v[5];
+    this->v7_ = v[7];
+    this->k_ = v[6] + 2 * v[5];
+  }
 
-  const bool rc_status = have(17, 20) && v[17] == 0x6a && v[18] == 0x30 && v[19] == 0x30 && v[20] == 0x30;
+  const bool rc_status = have(8, 20) && v[17] == 0x6a && v[18] == 0x30 && v[19] == 0x30 && v[20] == 0x30;
   if (rc_status) {
 #ifdef USE_TEXT_SENSOR
     // the system bytes of the RC heard on the air (also with a fixed system: to see what arrives)
@@ -178,7 +189,7 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
   if (!this->learned_)
     return;
 
-  if (v[10] == this->rc_address_) {
+  if (sender == this->rc_address_) {
 #ifdef USE_SENSOR
     if (this->rc_rssi_ != nullptr)
       this->rc_rssi_->publish_state(rssi);
@@ -212,7 +223,7 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
     if (this->remote_ != nullptr)
       this->remote_->trigger(COMMAND_NAMES[cmd]);
 #endif
-  } else if (v[10] == this->station_address_ && (!ok[31] || v[31] == 0x30) && (!ok[32] || v[32] == 0x30)) {
+  } else if (sender == this->station_address_ && (!ok[31] || v[31] == 0x30) && (!ok[32] || v[32] == 0x30)) {
     // the station's status (the start-up packets after a battery change have 00/ff in bytes 31..35). The station
     // is often weaker than the RC and its packets are often damaged: use each field whose bytes are clean.
 #ifdef USE_SENSOR
@@ -220,13 +231,13 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
       this->station_rssi_->publish_state(rssi);
     if (this->station_freq_offset_ != nullptr)
       this->station_freq_offset_->publish_state(freq_offset / 1000.0f);
-    // byte 18 repeats the temperature (2 * low + sign): a check for a damaged byte 17
-    const bool outside_ok = have(17, 18) && ((v[18] ^ static_cast<uint8_t>(2 * static_cast<uint8_t>(154 - v[17]))) & 0xfe) == 0;
+    // byte 18 repeats the temperature (2 * low + sign): a check of its own, so it needs no in-step proof
+    const bool outside_ok = clean[17] && clean[18] && ((v[18] ^ static_cast<uint8_t>(2 * static_cast<uint8_t>(154 - v[17]))) & 0xfe) == 0;
     if (outside_ok && this->outside_temperature_ != nullptr)
       this->outside_temperature_->publish_state(temperature(v[17], v[18], 154));
     if (outside_ok && this->raw_outside_ != nullptr)
       this->raw_outside_->publish_state(v[17]);
-    if (have(19, 20) && static_cast<uint8_t>(2 * v[19] + v[20]) == 0 && this->wind_ != nullptr)
+    if (clean[19] && clean[20] && static_cast<uint8_t>(2 * v[19] + v[20]) == 0 && this->wind_ != nullptr)
       this->wind_->publish_state(v[19]);
     if (have(24, 24) && this->brightness_ != nullptr)
       this->brightness_->publish_state(v[24] <= 2 ? 0 : (v[24] - 2) * 135.0f);
