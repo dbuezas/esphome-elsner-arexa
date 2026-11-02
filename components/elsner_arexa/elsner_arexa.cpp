@@ -93,6 +93,7 @@ void ElsnerArexa::start_listening() {
   r->set_num_preamble(2);
   r->set_foc_bs_cs_gate(false);  // the preamble is short: correct frequency and bit timing at once
   r->set_wait_time(cc1101::WaitTime::WAIT_TIME_8_SAMPLES);
+  r->set_bs_limit(cc1101::BsLimit::BS_LIMIT_3P125_PERCENT);  // follow a small chip rate error (the station)
   r->set_crc_enable(false);
   r->set_whitening(false);
   r->set_packet_length(64);
