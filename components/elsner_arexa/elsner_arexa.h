@@ -58,7 +58,8 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
   void set_raw_inside_sensor(sensor::Sensor *s) { this->raw_inside_ = s; }
   void set_raw_outside_sensor(sensor::Sensor *s) { this->raw_outside_ = s; }
   void set_raw_brightness_sensor(sensor::Sensor *s) { this->raw_brightness_ = s; }
-  void set_rssi_sensor(sensor::Sensor *s) { this->rssi_ = s; }
+  void set_rc_rssi_sensor(sensor::Sensor *s) { this->rc_rssi_ = s; }
+  void set_station_rssi_sensor(sensor::Sensor *s) { this->station_rssi_ = s; }
 #endif
 #ifdef USE_BINARY_SENSOR
   void set_rain_binary_sensor(binary_sensor::BinarySensor *s) { this->rain_ = s; }
@@ -105,7 +106,8 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
   sensor::Sensor *raw_inside_{nullptr};
   sensor::Sensor *raw_outside_{nullptr};
   sensor::Sensor *raw_brightness_{nullptr};
-  sensor::Sensor *rssi_{nullptr};
+  sensor::Sensor *rc_rssi_{nullptr};
+  sensor::Sensor *station_rssi_{nullptr};
 #endif
 #ifdef USE_BINARY_SENSOR
   binary_sensor::BinarySensor *rain_{nullptr};

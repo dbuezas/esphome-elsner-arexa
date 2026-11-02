@@ -19,6 +19,13 @@ DEPENDENCIES = ["elsner_arexa"]
 _raw = sensor.sensor_schema(
     accuracy_decimals=0, state_class=STATE_CLASS_MEASUREMENT, entity_category=ENTITY_CATEGORY_DIAGNOSTIC
 )
+_rssi = sensor.sensor_schema(
+    unit_of_measurement=UNIT_DECIBEL_MILLIWATT,
+    accuracy_decimals=0,
+    device_class=DEVICE_CLASS_SIGNAL_STRENGTH,
+    state_class=STATE_CLASS_MEASUREMENT,
+    entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
+)
 TYPES = {
     "inside_temperature": sensor.sensor_schema(
         unit_of_measurement=UNIT_CELSIUS,
@@ -48,13 +55,9 @@ TYPES = {
     "raw_inside": _raw,
     "raw_outside": _raw,
     "raw_brightness": _raw,
-    "rssi": sensor.sensor_schema(
-        unit_of_measurement=UNIT_DECIBEL_MILLIWATT,
-        accuracy_decimals=0,
-        device_class=DEVICE_CLASS_SIGNAL_STRENGTH,
-        state_class=STATE_CLASS_MEASUREMENT,
-        entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
-    ),
+    # the signal strength of the last packet from the RC and from the station, to place the radio well
+    "rc_rssi": _rssi,
+    "station_rssi": _rssi,
 }
 
 CONFIG_SCHEMA = cv.Schema(

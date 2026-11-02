@@ -142,11 +142,11 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi) {
   if (!this->learned_)
     return;
 
-#ifdef USE_SENSOR
-  if (this->rssi_ != nullptr)
-    this->rssi_->publish_state(rssi);
-#endif
   if (v[10] == this->rc_address_) {
+#ifdef USE_SENSOR
+    if (this->rc_rssi_ != nullptr)
+      this->rc_rssi_->publish_state(rssi);
+#endif
     if (v[17] == 0x6a && v[18] == 0x30) {  // status: the RC's own temperature sensor
 #ifdef USE_SENSOR
       if (this->inside_temperature_ != nullptr)
@@ -175,6 +175,8 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi) {
   } else if (v[10] == this->station_address_ && n >= 33 && v[31] == 0x30 && v[32] == 0x30) {
     // the station's status (the start-up packets have 00/ff here)
 #ifdef USE_SENSOR
+    if (this->station_rssi_ != nullptr)
+      this->station_rssi_->publish_state(rssi);
     if (this->outside_temperature_ != nullptr)
       this->outside_temperature_->publish_state(14.65f - 0.0865f * v[17]);
     if (this->raw_outside_ != nullptr)

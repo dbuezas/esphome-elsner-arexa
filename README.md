@@ -44,7 +44,7 @@ The full example with all sensors is in [examples/elsner-arexa.yaml](examples/el
 
 | Platform | Keys |
 |---|---|
-| `sensor` | `inside_temperature`, `outside_temperature`, `wind`, `brightness`, `rain_sensor`, `rssi`, and `raw_inside`, `raw_outside`, `raw_brightness` (for calibration) |
+| `sensor` | `inside_temperature`, `outside_temperature`, `wind`, `brightness`, `rain_sensor`, `rc_rssi`, `station_rssi`, and `raw_inside`, `raw_outside`, `raw_brightness` (for calibration) |
 | `binary_sensor` | `rain` (the station's rain alarm), `wind_alarm` |
 | `button` | `open`, `stop`, `down`, `auto`, `manual` |
 | `event` | `remote` (event types `open`, `stop`, `down`, `auto`, `manual`) |
@@ -58,7 +58,7 @@ Then the buttons work as soon as any Arexa packet (RC or station) has brought th
 
 **Frequency:** cheap CC1101 modules are often 20 to 40 kHz off. Mine needs `frequency: 868.227MHz` to come out at
 868.19 MHz. If the buttons do nothing or only the RC's packets come in, try steps of 10 kHz between 868.15 and
-868.24 MHz. The `rssi` sensor and the log (`Learned my RC: ...`) show whether packets arrive.
+868.24 MHz. The `rc_rssi` / `station_rssi` sensors and the log (`Learned my RC: ...`) show whether packets arrive.
 
 **Sharing the radio:** if something else uses the same CC1101 (for example a `remote_transmitter` in OOK mode), call
 `id(<your elsner_arexa id>).start_listening();` after it, to put the radio back into Arexa mode.

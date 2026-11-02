@@ -50,8 +50,10 @@ sensor:
       name: Arexa Brightness
     rain_sensor:
       name: Arexa Rain Sensor
-    rssi:
-      name: Arexa Signal
+    rc_rssi:
+      name: Arexa RC Signal
+    station_rssi:
+      name: Arexa Station Signal
 
 binary_sensor:
   - platform: elsner_arexa
