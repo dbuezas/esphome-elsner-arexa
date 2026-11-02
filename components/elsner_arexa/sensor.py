@@ -26,6 +26,13 @@ _rssi = sensor.sensor_schema(
     state_class=STATE_CLASS_MEASUREMENT,
     entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
 )
+_offset = sensor.sensor_schema(
+    unit_of_measurement="kHz",
+    accuracy_decimals=1,
+    state_class=STATE_CLASS_MEASUREMENT,
+    icon="mdi:sine-wave",
+    entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
+)
 TYPES = {
     "inside_temperature": sensor.sensor_schema(
         unit_of_measurement=UNIT_CELSIUS,
@@ -58,6 +65,9 @@ TYPES = {
     # the signal strength of the last packet from the RC and from the station, to place the radio well
     "rc_rssi": _rssi,
     "station_rssi": _rssi,
+    # the CC1101's estimate of how far each sender is from the set frequency, to tune `frequency:`
+    "rc_freq_offset": _offset,
+    "station_freq_offset": _offset,
 }
 
 CONFIG_SCHEMA = cv.Schema(

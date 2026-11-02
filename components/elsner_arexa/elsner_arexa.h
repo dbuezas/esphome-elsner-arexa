@@ -60,6 +60,8 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
   void set_raw_brightness_sensor(sensor::Sensor *s) { this->raw_brightness_ = s; }
   void set_rc_rssi_sensor(sensor::Sensor *s) { this->rc_rssi_ = s; }
   void set_station_rssi_sensor(sensor::Sensor *s) { this->station_rssi_ = s; }
+  void set_rc_freq_offset_sensor(sensor::Sensor *s) { this->rc_freq_offset_ = s; }
+  void set_station_freq_offset_sensor(sensor::Sensor *s) { this->station_freq_offset_ = s; }
 #endif
 #ifdef USE_BINARY_SENSOR
   void set_rain_binary_sensor(binary_sensor::BinarySensor *s) { this->rain_ = s; }
@@ -73,13 +75,18 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
 #endif
 
  protected:
-  void decode_(const std::vector<uint8_t> &chips, float rssi);
+  void decode_(const std::vector<uint8_t> &chips, float rssi, float freq_offset);
   void send_frame_(const std::vector<uint8_t> &frame);
 
   cc1101::CC1101Component *radio_{nullptr};
   float frequency_{868.19e6f};
   float output_power_{11.0f};
-  std::vector<std::pair<std::vector<uint8_t>, float>> queue_;
+  struct Received {
+    std::vector<uint8_t> chips;
+    float rssi;
+    float freq_offset;
+  };
+  std::vector<Received> queue_;
 
   void use_system_(const uint8_t *system);
 
@@ -108,6 +115,8 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
   sensor::Sensor *raw_brightness_{nullptr};
   sensor::Sensor *rc_rssi_{nullptr};
   sensor::Sensor *station_rssi_{nullptr};
+  sensor::Sensor *rc_freq_offset_{nullptr};
+  sensor::Sensor *station_freq_offset_{nullptr};
 #endif
 #ifdef USE_BINARY_SENSOR
   binary_sensor::BinarySensor *rain_{nullptr};

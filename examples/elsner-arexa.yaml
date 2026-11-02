@@ -54,6 +54,10 @@ sensor:
       name: Arexa RC Signal
     station_rssi:
       name: Arexa Station Signal
+    rc_freq_offset:
+      name: Arexa RC Frequency Offset
+    station_freq_offset:
+      name: Arexa Station Frequency Offset
 
 binary_sensor:
   - platform: elsner_arexa

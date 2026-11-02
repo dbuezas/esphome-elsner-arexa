@@ -46,7 +46,7 @@ The full example with all sensors is in [examples/elsner-arexa.yaml](examples/el
 
 | Platform | Keys |
 |---|---|
-| `sensor` | `inside_temperature`, `outside_temperature`, `wind`, `brightness`, `rain_sensor`, `rc_rssi`, `station_rssi`, and `raw_inside`, `raw_outside`, `raw_brightness` (for calibration) |
+| `sensor` | `inside_temperature`, `outside_temperature`, `wind`, `brightness`, `rain_sensor`, `rc_rssi`, `station_rssi`, `rc_freq_offset`, `station_freq_offset`, and `raw_inside`, `raw_outside`, `raw_brightness` (for calibration) |
 | `binary_sensor` | `rain` (the station's rain alarm), `wind_alarm` |
 | `button` | `open`, `stop`, `down`, `auto`, `manual` |
 | `event` | `remote` (event types `open`, `stop`, `down`, `auto`, `manual`) |

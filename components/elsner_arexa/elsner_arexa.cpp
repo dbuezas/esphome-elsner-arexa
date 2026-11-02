@@ -87,16 +87,16 @@ void ElsnerArexa::start_listening() {
 // Called by the CC1101 driver before it listens again: keep it short (the station answers the RC 14 ms later).
 void ElsnerArexa::on_packet(const std::vector<uint8_t> &packet, float freq_offset, float rssi, uint8_t lqi) {
   if (this->queue_.size() < 8)
-    this->queue_.emplace_back(packet, rssi);
+    this->queue_.push_back({packet, rssi, freq_offset});
 }
 
 void ElsnerArexa::loop() {
   for (auto &item : this->queue_)
-    this->decode_(item.first, item.second);
+    this->decode_(item.chips, item.rssi, item.freq_offset);
   this->queue_.clear();
 }
 
-void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi) {
+void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_offset) {
   // Manchester in software: stop at the first broken chip pair (the end of a weak or cut frame)
   uint8_t c[38] = {0xce};
   int n = 1;
@@ -146,6 +146,8 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi) {
 #ifdef USE_SENSOR
     if (this->rc_rssi_ != nullptr)
       this->rc_rssi_->publish_state(rssi);
+    if (this->rc_freq_offset_ != nullptr)
+      this->rc_freq_offset_->publish_state(freq_offset / 1000.0f);
 #endif
     if (v[17] == 0x6a && v[18] == 0x30) {  // status: the RC's own temperature sensor
 #ifdef USE_SENSOR
@@ -177,6 +179,8 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi) {
 #ifdef USE_SENSOR
     if (this->station_rssi_ != nullptr)
       this->station_rssi_->publish_state(rssi);
+    if (this->station_freq_offset_ != nullptr)
+      this->station_freq_offset_->publish_state(freq_offset / 1000.0f);
     if (this->outside_temperature_ != nullptr)
       this->outside_temperature_->publish_state(14.65f - 0.0865f * v[17]);
     if (this->raw_outside_ != nullptr)
