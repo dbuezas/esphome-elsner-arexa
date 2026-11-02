@@ -36,6 +36,18 @@ static uint16_t crc16(const uint8_t *data, size_t len) {
 
 static uint8_t parity_bit(uint8_t seed, int k) { return __builtin_parity(seed & MASK[k]) ^ INV[k]; }
 
+// A temperature in tenths of a degree: a = base - low, b = 2 * low + sign (base 168 for the RC, 154 for the
+// station). The RC also sends the high byte: byte 24 = 0xd0 + 2 * high; the station only has the sign bit.
+static float temperature(uint8_t a, uint8_t b, uint8_t base) {
+  uint8_t low = base - a;
+  return (low - ((b & 1) ? 256 : 0)) / 10.0f;
+}
+static float temperature_with_high(uint8_t a, uint8_t high_byte, uint8_t base) {
+  uint8_t low = base - a;
+  int8_t high = static_cast<int8_t>(high_byte - 0xd0) / 2;
+  return (high * 256 + low) / 10.0f;
+}
+
 // system[0..8] = the values of bytes 8..16 of the RC's packets: 8, 9 the system ID (repeated in 13, 14), 10 the RC's
 // address, 15 the station's address (the RC's packets go to the station), 11, 12, 16 the device type
 void ElsnerArexa::use_system_(const uint8_t *system) {
@@ -152,7 +164,7 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
     if (v[17] == 0x6a && v[18] == 0x30) {  // status: the RC's own temperature sensor
 #ifdef USE_SENSOR
       if (this->inside_temperature_ != nullptr)
-        this->inside_temperature_->publish_state((428 - v[22]) / 10.0f);
+        this->inside_temperature_->publish_state(temperature_with_high(v[22], v[24], 168));
       if (this->raw_inside_ != nullptr)
         this->raw_inside_->publish_state(v[22]);
 #endif
@@ -182,7 +194,7 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
     if (this->station_freq_offset_ != nullptr)
       this->station_freq_offset_->publish_state(freq_offset / 1000.0f);
     if (this->outside_temperature_ != nullptr)
-      this->outside_temperature_->publish_state(14.65f - 0.0865f * v[17]);
+      this->outside_temperature_->publish_state(temperature(v[17], v[18], 154));
     if (this->raw_outside_ != nullptr)
       this->raw_outside_->publish_state(v[17]);
     if (this->wind_ != nullptr)

@@ -78,8 +78,8 @@ The value scales come from my own RC display readings, so they are a first fit:
 
 | Value | Formula | Based on |
 |---|---|---|
-| inside temperature | (428 - byte 22) / 10 °C | 8 readings, 20 to 25 °C |
-| outside temperature | 14.65 - 0.0865 × byte 17 °C | 8 readings, 8 to 11 °C |
+| inside temperature | bytes 22, 23 (see Protocol) | the RC cooled in a freezer and warmed up: every display step from -1 to 13 °C, plus 20 to 25 °C; a thermometer next to the RC agrees within 0.1 °C |
+| outside temperature | bytes 17, 18 (see Protocol) | 30 readings, 7 to 11 °C; below 0 °C not seen yet |
 | brightness | (byte 24 - 2) × 135 lx | 2 readings, 0 and 6.5 klux |
 | wind | raw (0 = calm) | no scale yet |
 
@@ -158,8 +158,8 @@ Measurements (Arexa; the Solexa's sensor has a different layout):
 
 | Sender | Byte | Content |
 |---|---|---|
-| RC status | 22 | inside temperature, about (428 - v) / 10 °C |
-| station | 17 | outside temperature, about 14.65 - 0.0865 × v °C |
+| RC status | 22, 23 | inside temperature (below) |
+| station | 17, 18 | outside temperature (below) |
 | station | 19 | wind (0 = calm) |
 | station | 21 | rain alarm: `b2` dry, `ae` wet |
 | station | 24 | brightness, about (v - 2) × 135 lx |
@@ -167,5 +167,8 @@ Measurements (Arexa; the Solexa's sensor has a different layout):
 | station | 29 | rain sensor reading: `a6` dry, lower = wetter |
 | station | 31..35 | `30` in a status packet (`00`/`ff` in the start-up packets after a battery change) |
 
-In the RC's status packets and the station's packets, each value byte is followed by one that holds about
-`constant - 2 × value`.
+A temperature is two bytes `a, b` in tenths of a degree: `low = (base - a) & 0xff`, `b = 2 * low + sign`, and
+`tenths = low - 256 * sign`. `base` is 168 for the RC's inside sensor and 154 for the station. The RC also sends the
+high byte in byte 24 (`d0 + 2 * high`: `d0` above 0 °C, `ce` below), so the inside has no range limit. Checked from
+-1 to 25 °C inside. The station has no such byte: with the sign bit alone, its range would be -25.6 to +25.5 °C,
+so something else must change above 25.5 °C (not seen yet), and its sign is not seen yet either. Other value bytes are followed by one that holds about `constant - 2 × value` in the same way.
