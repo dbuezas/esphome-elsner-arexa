@@ -114,33 +114,51 @@ void ElsnerArexa::loop() {
 }
 
 void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_offset) {
-  // Manchester in software: stop at the first broken chip pair (the end of a weak or cut frame)
-  uint8_t c[38] = {0xce};
-  int n = 1;
-  for (size_t k = 0; k + 1 < x.size() * 8 && n < 38; k += 2) {
+  // Manchester in software. A broken chip pair (10 or 01 expected) marks its byte as bad, and decoding goes on:
+  // the station's packets often have a glitch somewhere and still carry clean fields after it.
+  uint8_t c[33] = {0xce};
+  bool bad[33] = {false};
+  int first_bad = 33;
+  for (size_t k = 0; k + 1 < x.size() * 8 && k / 16 < 32; k += 2) {
     const int a = (x[k >> 3] >> (7 - (k & 7))) & 1, b = (x[(k + 1) >> 3] >> (7 - ((k + 1) & 7))) & 1;
-    if (a == b)
-      break;
-    const size_t i = k / 2;
-    c[1 + i / 8] |= a << (7 - i % 8);
-    if (i % 8 == 7)
-      n++;
+    const size_t i = k / 2, byte = 1 + i / 8;
+    if (a == b && !bad[byte]) {
+      bad[byte] = true;
+      if (byte < static_cast<size_t>(first_bad))
+        first_bad = byte;
+    }
+    c[byte] |= a << (7 - i % 8);
   }
-  // no CRC (it is past the end of the FIFO): the 32-bit header is the check; each field is used only when its
-  // bytes arrived (v[k] for k < n), the first is at byte 17
-  if (n < 19 || c[1] != 0xad || c[2] != 0x93 || c[3] != 0xba)
+  // no CRC (it is past the end of the FIFO): the 32-bit header and the seed byte must be clean
+  if (first_bad <= 4 || c[1] != 0xad || c[2] != 0x93 || c[3] != 0xba)
     return;
   const uint8_t seed = c[4];
-  uint8_t v[36] = {0};
-  for (int k = 5; k < n && k < 36; k++)
+  uint8_t v[33] = {0};
+  for (int k = 5; k < 33; k++)
     v[k] = c[k] - 2 * c[k - 1] - parity_bit(seed, k);
+  // value k needs bytes k and k-1. Bytes after a glitch count only if the frame is still in step there: a known
+  // filler byte (0x30) near the end must have arrived clean (after a lost chip, everything later is shifted).
+  bool in_step = first_bad == 33;
+  for (int k = 25; k < 33 && !in_step; k++)
+    in_step = k > first_bad && !bad[k] && !bad[k - 1] && v[k] == 0x30;
+  bool ok[33] = {false};
+  for (int k = 5; k < 33; k++)
+    ok[k] = !bad[k] && !bad[k - 1] && (k < first_bad || in_step);
+  auto have = [&ok](int from, int to) {
+    for (int k = from; k <= to; k++)
+      if (!ok[k])
+        return false;
+    return true;
+  };
+  if (!have(5, 16))
+    return;  // the counter and the addresses
 
   // the counter (RC and station share it): v5 counts down, v6 = k - 2 v5, v7 changes rarely
   this->v5_ = v[5];
   this->v7_ = v[7];
   this->k_ = v[6] + 2 * v[5];
 
-  const bool rc_status = v[17] == 0x6a && v[18] == 0x30 && v[19] == 0x30 && v[20] == 0x30;
+  const bool rc_status = have(17, 20) && v[17] == 0x6a && v[18] == 0x30 && v[19] == 0x30 && v[20] == 0x30;
   if (rc_status) {
 #ifdef USE_TEXT_SENSOR
     // the system bytes of the RC heard on the air (also with a fixed system: to see what arrives)
@@ -167,11 +185,13 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
     if (this->rc_freq_offset_ != nullptr)
       this->rc_freq_offset_->publish_state(freq_offset / 1000.0f);
 #endif
+    if (!have(17, 18))
+      return;
     if (v[17] == 0x6a && v[18] == 0x30) {  // status: the RC's own temperature sensor
 #ifdef USE_SENSOR
-      if (n > 24 && this->inside_temperature_ != nullptr)
+      if (have(22, 24) && this->inside_temperature_ != nullptr)
         this->inside_temperature_->publish_state(temperature_with_high(v[22], v[24], 168));
-      if (n > 24 && this->raw_inside_ != nullptr)
+      if (have(22, 22) && this->raw_inside_ != nullptr)
         this->raw_inside_->publish_state(v[22]);
 #endif
       return;
@@ -192,33 +212,33 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
     if (this->remote_ != nullptr)
       this->remote_->trigger(COMMAND_NAMES[cmd]);
 #endif
-  } else if (v[10] == this->station_address_ && (n < 32 || v[31] == 0x30) && (n < 33 || v[32] == 0x30)) {
+  } else if (v[10] == this->station_address_ && (!ok[31] || v[31] == 0x30) && (!ok[32] || v[32] == 0x30)) {
     // the station's status (the start-up packets after a battery change have 00/ff in bytes 31..35). The station
-    // is often weaker than the RC and its packets end early: use each field whose bytes arrived (v[k] for k < n).
+    // is often weaker than the RC and its packets are often damaged: use each field whose bytes are clean.
 #ifdef USE_SENSOR
     if (this->station_rssi_ != nullptr)
       this->station_rssi_->publish_state(rssi);
     if (this->station_freq_offset_ != nullptr)
       this->station_freq_offset_->publish_state(freq_offset / 1000.0f);
     // byte 18 repeats the temperature (2 * low + sign): a check for a damaged byte 17
-    const bool outside_ok = n > 18 && ((v[18] ^ static_cast<uint8_t>(2 * static_cast<uint8_t>(154 - v[17]))) & 0xfe) == 0;
+    const bool outside_ok = have(17, 18) && ((v[18] ^ static_cast<uint8_t>(2 * static_cast<uint8_t>(154 - v[17]))) & 0xfe) == 0;
     if (outside_ok && this->outside_temperature_ != nullptr)
       this->outside_temperature_->publish_state(temperature(v[17], v[18], 154));
     if (outside_ok && this->raw_outside_ != nullptr)
       this->raw_outside_->publish_state(v[17]);
-    if (n > 20 && static_cast<uint8_t>(2 * v[19] + v[20]) == 0 && this->wind_ != nullptr)
+    if (have(19, 20) && static_cast<uint8_t>(2 * v[19] + v[20]) == 0 && this->wind_ != nullptr)
       this->wind_->publish_state(v[19]);
-    if (n > 24 && this->brightness_ != nullptr)
+    if (have(24, 24) && this->brightness_ != nullptr)
       this->brightness_->publish_state(v[24] <= 2 ? 0 : (v[24] - 2) * 135.0f);
-    if (n > 24 && this->raw_brightness_ != nullptr)
+    if (have(24, 24) && this->raw_brightness_ != nullptr)
       this->raw_brightness_->publish_state(v[24]);
-    if (n > 29 && this->rain_sensor_ != nullptr)
+    if (have(29, 29) && this->rain_sensor_ != nullptr)
       this->rain_sensor_->publish_state(v[29]);
 #endif
 #ifdef USE_BINARY_SENSOR
-    if (n > 21 && this->rain_ != nullptr)
+    if (have(21, 21) && this->rain_ != nullptr)
       this->rain_->publish_state(v[21] < 0xb0);  // 0xb2 dry, 0xae while the rain alarm holds
-    if (n > 28 && this->wind_alarm_ != nullptr)
+    if (have(28, 28) && this->wind_alarm_ != nullptr)
       this->wind_alarm_->publish_state(v[28] != 0x27);  // 0x27 calm
 #endif
   }
