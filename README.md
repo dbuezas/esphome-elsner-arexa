@@ -86,21 +86,84 @@ If you have more pairs (RC display, the `raw_*` sensors), please open an issue.
 ## How it works
 
 I decoded the protocol with an RTL-SDR, starting from the rtl_433 decoder `elsner_solexa` (364), which knows the
-frame and CRC. The Solexa (the shade version) uses the same radio protocol; I checked my model against its
-recordings in rtl_433_tests, so the buttons may work there too, but the sensor bytes are different.
-
-- **Radio:** 868.19 MHz, 2-FSK, ±35 kHz, Manchester (1 = chips 10, 0 = 01), chips of exactly 10.000 µs
-  (100 kbaud). A short preamble (~13 alternating chips), the anchor `0a`, then 38 bytes.
-- **Frame:** `ce ad 93 ba`, a random seed byte, 31 payload bytes, CRC-16 (poly 0x1021, init 0x68b3).
-- **Scrambling:** with `d[k] = c[k] - 2 c[k-1]` (mod 256), every payload byte is
-  `d[k] = value[k] + (parity(seed & mask[k]) ^ inv[k])`. The masks are the same on every unit (see the source).
-  This rebuilds all 353 frames of my RC bit for bit.
-- **Payload values:** bytes 5 to 7 are a packet counter (byte 5 counts down; RC and station share it), bytes 8 to
-  16 are the system ID and the sender and receiver addresses (set by the teach-in), bytes 17 to 19 the command,
-  then the measurements.
-- **The station takes a command only if its counter is newer** than the last one it saw: the component takes the
-  counter of the last packet it heard and counts on from it.
+frame and the CRC. The Solexa (the shade version) uses the same radio protocol: my model also decodes its
+recordings in rtl_433_tests, so the buttons may work there too, but its sensor bytes are different.
 
 Receiving: the chip hands over raw chips (its own Manchester decoder locks on the wrong chip phase about half the
-time with this short preamble), synced on the 16 chips of `ce`; the ESP decodes them. Sending: the chip does the
-Manchester coding itself (an ESP8266 cannot time 10 µs chips in software while WiFi runs).
+time with this short preamble), synced on the 16 chips of `ce`, and the ESP decodes them. Sending: the chip does
+the Manchester coding itself (an ESP8266 cannot time 10 µs chips in software while WiFi runs).
+
+## Protocol
+
+### Radio
+
+- 868.19 MHz, 2-FSK. Deviation about ±35 kHz (RC) and ±45 kHz (station).
+- Manchester: a 1 is the chips `10`, a 0 is `01`. Chips of exactly **10.000 µs** (100 kbaud). rtl_433's flex
+  setting `short=11` works only because it is tolerant.
+- A short preamble (about 13 alternating chips), the anchor byte `0a`, then the 38-byte frame.
+- The RC and the station talk once a minute (the RC sends its status, the station answers 14 ms later), and on
+  every button press (the RC repeats a command until the station answers).
+
+### Frame
+
+| Bytes | Content |
+|---|---|
+| 0..3 | `ce ad 93 ba` |
+| 4 | seed: random for every packet |
+| 5..35 | payload, scrambled (below) |
+| 36..37 | CRC-16 over bytes 0..35: polynomial 0x1021, init 0x68b3 |
+
+### Scrambling
+
+With `d[k] = c[k] - 2 * c[k-1]` (mod 256, on the raw bytes `c` as sent), every payload byte is
+
+```
+d[k] = value[k] + (parity(seed & mask[k]) ^ inv[k])        seed = c[4]
+```
+
+| k | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 | 22 | 23 | 24 | 25 | 26 | 27 | 28 | 29 | 30 | 31 | 32 | 33 | 34 | 35 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| mask | 01 | 01 | 01 | 01 | 01 | 01 | 01 | 81 | c1 | e1 | f1 | f9 | fd | ff | fe | ff | fe | ff | fe | ff | fe | ff | 7e | bf | 5e | af | 56 | ab | 54 | aa | 55 |
+| inv | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 1 | 0 | 1 | 0 | 1 | 0 | 1 | 0 | 1 | 0 | 1 | 0 | 1 | 1 | 0 | 0 | 1 | 1 | 0 | 0 | 1 | 1 |
+
+So `value[k] = c[k] - 2 * c[k-1] - (parity(seed & mask[k]) ^ inv[k])`. To build a frame: pick a seed, compute
+`d[k]` and then `c[k] = d[k] + 2 * c[k-1]` from k = 5 on. This model rebuilds all 353 frames of my RC bit for bit.
+
+### Values
+
+| Bytes | Content |
+|---|---|
+| 5..7 | packet counter: `v5` counts down (the RC and the station share it), `v6 = K - 2 * v5`, `v7` changes rarely (K belongs to it). The station only takes a command whose counter is newer than the last one. |
+| 8, 9 | system ID (set by the teach-in), repeated in 13, 14 |
+| 10 | sender address |
+| 15 | receiver address |
+| 11, 12, 16 | device type |
+| 17..19 | RC: the command (below). Station: the measurements start here. |
+| 20.. | filler `30` where nothing is sent |
+
+RC commands (bytes 17, 18, 19), the same on the Solexa recordings:
+
+| Command | 17 | 18 | 19 |
+|---|---|---|---|
+| status (once a minute) | 6a | 30 | 30 |
+| open | 25 | ba | 30 |
+| stop | 27 | b6 | 30 |
+| down | 36 | 98 | 30 |
+| automatic mode | 6a | 1f | 52 |
+| manual mode | 6a | 13 | 6a |
+
+Measurements (Arexa; the Solexa's sensor has a different layout):
+
+| Sender | Byte | Content |
+|---|---|---|
+| RC status | 22 | inside temperature, about (428 - v) / 10 °C |
+| station | 17 | outside temperature, about 14.65 - 0.0865 × v °C |
+| station | 19 | wind (0 = calm) |
+| station | 21 | rain alarm: `b2` dry, `ae` wet |
+| station | 24 | brightness, about (v - 2) × 135 lx |
+| station | 28 | wind flag: `27` calm |
+| station | 29 | rain sensor reading: `a6` dry, lower = wetter |
+| station | 31..35 | `30` in a status packet (`00`/`ff` in the start-up packets after a battery change) |
+
+In the RC's status packets and the station's packets, each value byte is followed by one that holds about
+`constant - 2 × value`.
