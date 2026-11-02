@@ -186,8 +186,10 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
     if (this->remote_ != nullptr)
       this->remote_->trigger(COMMAND_NAMES[cmd]);
 #endif
-  } else if (v[10] == this->station_address_ && n >= 33 && v[31] == 0x30 && v[32] == 0x30) {
-    // the station's status (the start-up packets have 00/ff here)
+  } else if (v[10] == this->station_address_ && (n < 32 || v[31] == 0x30) && (n < 33 || v[32] == 0x30)) {
+    // the station's status: the fields end at byte 30, so a weak packet cut after it still counts (the start-up
+    // packets after a battery change have 00/ff in bytes 31..35, when those arrived)
+    ESP_LOGD(TAG, "Station packet, %d clean bytes, %.0f dBm", n, rssi);
 #ifdef USE_SENSOR
     if (this->station_rssi_ != nullptr)
       this->station_rssi_->publish_state(rssi);
