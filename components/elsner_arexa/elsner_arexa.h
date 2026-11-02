@@ -15,6 +15,9 @@
 #ifdef USE_EVENT
 #include "esphome/components/event/event.h"
 #endif
+#ifdef USE_TEXT_SENSOR
+#include "esphome/components/text_sensor/text_sensor.h"
+#endif
 #include <utility>
 #include <vector>
 
@@ -30,6 +33,8 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
   void set_radio(cc1101::CC1101Component *radio) { this->radio_ = radio; }
   void set_frequency(float frequency) { this->frequency_ = frequency; }
   void set_output_power(float power) { this->output_power_ = power; }
+  // the 9 system bytes (8..16) to use instead of learning them from the RC; see the README
+  void set_fixed_system(const std::vector<uint8_t> &system);
 
   void setup() override;
   void loop() override;
@@ -62,6 +67,9 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
 #ifdef USE_EVENT
   void set_remote_event(event::Event *e) { this->remote_ = e; }
 #endif
+#ifdef USE_TEXT_SENSOR
+  void set_system_text_sensor(text_sensor::TextSensor *s) { this->system_text_ = s; }
+#endif
 
  protected:
   void decode_(const std::vector<uint8_t> &chips, float rssi);
@@ -72,8 +80,11 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
   float output_power_{11.0f};
   std::vector<std::pair<std::vector<uint8_t>, float>> queue_;
 
-  // learned from the RC's status packets
+  void use_system_(const uint8_t *system);
+
+  // learned from the RC's status packets, or fixed in the configuration
   bool learned_{false};
+  bool fixed_{false};
   uint8_t system_[9]{};  // values of bytes 8..16 of the RC's packets: system ID, addresses, device type
   uint8_t rc_address_{0};
   uint8_t station_address_{0};
@@ -102,6 +113,10 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
 #endif
 #ifdef USE_EVENT
   event::Event *remote_{nullptr};
+#endif
+#ifdef USE_TEXT_SENSOR
+  text_sensor::TextSensor *system_text_{nullptr};
+  std::string system_seen_;
 #endif
 };
 

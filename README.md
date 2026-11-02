@@ -48,6 +48,13 @@ The full example with all sensors is in [examples/elsner-arexa.yaml](examples/el
 | `binary_sensor` | `rain` (the station's rain alarm), `wind_alarm` |
 | `button` | `open`, `stop`, `down`, `auto`, `manual` |
 | `event` | `remote` (event types `open`, `stop`, `down`, `auto`, `manual`) |
+| `text_sensor` | `system`: the system bytes of the RC heard on the air |
+
+**System (the pairing):** by default (`system: auto`) the component learns your RC's system ID and the RC's and
+the station's addresses from the RC's first status packet. The `system` text sensor shows what arrives, as 18 hex
+digits (bytes 8 to 16 of the RC's packets: the system ID, the RC's address, the station's address and the device
+types). To skip the learning, put that value into the hub, for example `system: 1a2b3c4d5e1a2b6f70` (made up: use yours).
+Then the buttons work as soon as any Arexa packet (RC or station) has brought the counter.
 
 **Frequency:** cheap CC1101 modules are often 20 to 40 kHz off. Mine needs `frequency: 868.227MHz` to come out at
 868.19 MHz. If the buttons do nothing or only the RC's packets come in, try steps of 10 kHz between 868.15 and
@@ -57,7 +64,7 @@ The full example with all sensors is in [examples/elsner-arexa.yaml](examples/el
 `id(<your elsner_arexa id>).start_listening();` after it, to put the radio back into Arexa mode.
 
 **After a restart** the buttons work once the component has heard one RC status packet (the RC sends one every
-minute). Until then they log a warning and send nothing.
+minute), or with a fixed `system` once any Arexa packet came in. Until then they log a warning and send nothing.
 
 **"err" on the RC display:** right after a command from Home Assistant, the RC's next exchange can show "err" for
 a second. The RC sleeps between its packets, so it does not see the new counter; it learns it from the station's

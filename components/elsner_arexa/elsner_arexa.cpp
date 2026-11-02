@@ -36,6 +36,23 @@ static uint16_t crc16(const uint8_t *data, size_t len) {
 
 static uint8_t parity_bit(uint8_t seed, int k) { return __builtin_parity(seed & MASK[k]) ^ INV[k]; }
 
+// system[0..8] = the values of bytes 8..16 of the RC's packets: 8, 9 the system ID (repeated in 13, 14), 10 the RC's
+// address, 15 the station's address (the RC's packets go to the station), 11, 12, 16 the device type
+void ElsnerArexa::use_system_(const uint8_t *system) {
+  for (int i = 0; i < 9; i++)
+    this->system_[i] = system[i];
+  this->rc_address_ = system[2];
+  this->station_address_ = system[7];
+  this->learned_ = true;
+}
+
+void ElsnerArexa::set_fixed_system(const std::vector<uint8_t> &system) {
+  if (system.size() != 9)
+    return;
+  this->use_system_(system.data());
+  this->fixed_ = true;
+}
+
 void ElsnerArexa::setup() {
   this->radio_->register_listener(this);
   this->start_listening();
@@ -106,13 +123,21 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi) {
   this->k_ = v[6] + 2 * v[5];
 
   const bool rc_status = v[17] == 0x6a && v[18] == 0x30 && v[19] == 0x30 && v[20] == 0x30;
-  if (!this->learned_ && rc_status) {
+  if (rc_status) {
+#ifdef USE_TEXT_SENSOR
+    // the system bytes of the RC heard on the air (also with a fixed system: to see what arrives)
+    char hex[19];
     for (int i = 0; i < 9; i++)
-      this->system_[i] = v[8 + i];
-    this->rc_address_ = v[10];
-    this->station_address_ = v[15];  // the RC's packets go to the station
-    this->learned_ = true;
-    ESP_LOGI(TAG, "Learned my RC: system %02x%02x, RC address %02x, station address %02x", v[8], v[9], v[10], v[15]);
+      snprintf(hex + 2 * i, 3, "%02x", v[8 + i]);
+    if (this->system_text_ != nullptr && this->system_seen_ != hex) {
+      this->system_seen_ = hex;
+      this->system_text_->publish_state(hex);
+    }
+#endif
+    if (!this->learned_) {
+      this->use_system_(v + 8);
+      ESP_LOGI(TAG, "Learned my RC: system %02x%02x, RC address %02x, station address %02x", v[8], v[9], v[10], v[15]);
+    }
   }
   if (!this->learned_)
     return;
@@ -174,7 +199,7 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi) {
 
 bool ElsnerArexa::send_command(Command cmd) {
   if (!this->learned_ || this->v5_ < 0) {
-    ESP_LOGW(TAG, "No RC packet heard yet (one comes every minute): not sending");
+    ESP_LOGW(TAG, "No Arexa packet heard yet (the RC sends one every minute): not sending");
     return false;
   }
   uint8_t value[36] = {0};
@@ -228,8 +253,8 @@ void ElsnerArexa::dump_config() {
   ESP_LOGCONFIG(TAG, "Elsner Arexa:");
   ESP_LOGCONFIG(TAG, "  Frequency: %.3f MHz", this->frequency_ / 1e6f);
   if (this->learned_)
-    ESP_LOGCONFIG(TAG, "  System %02x%02x, RC address %02x, station address %02x", this->system_[0], this->system_[1],
-                  this->rc_address_, this->station_address_);
+    ESP_LOGCONFIG(TAG, "  System %02x%02x, RC address %02x, station address %02x (%s)", this->system_[0], this->system_[1],
+                  this->rc_address_, this->station_address_, this->fixed_ ? "fixed" : "learned");
   else
     ESP_LOGCONFIG(TAG, "  RC not heard yet (it sends a status packet every minute)");
 }
