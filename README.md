@@ -1,5 +1,7 @@
 [!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://www.buymeacoffee.com/dbuezas)
 
+Post in HA forum: https://community.home-assistant.io/t/elsner-arexa-solexa-868-mhz-radio-in-home-assistant-with-esphome-cc1101
+
 # esphome-elsner-arexa
 
 An ESPHome component for the **Elsner Arexa** window control (Arexa 230 V: a battery RC handset and a weather
