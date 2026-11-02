@@ -1,6 +1,7 @@
 #include "elsner_arexa.h"
 #include "esphome/core/log.h"
 #include "esphome/core/hal.h"
+#include "esphome/core/application.h"
 
 namespace esphome::elsner_arexa {
 
@@ -68,6 +69,10 @@ void ElsnerArexa::set_fixed_system(const std::vector<uint8_t> &system) {
 void ElsnerArexa::setup() {
   this->radio_->register_listener(this);
   this->start_listening();
+  // The station answers the RC 14 ms after its packet, and the CC1101 driver listens again only when the main loop
+  // has read the RC's packet. With the default 16 ms loop most station packets are missed.
+  if (App.get_loop_interval() > 2)
+    App.set_loop_interval(2);
 }
 
 // Receive settings. The chips are 10.000 us (100 kbaud), 2-FSK with ~+-35 kHz deviation, Manchester coded (1 = chips

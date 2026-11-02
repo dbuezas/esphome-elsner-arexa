@@ -92,7 +92,8 @@ frame and the CRC. The Solexa (the shade version) uses the same radio protocol: 
 recordings in rtl_433_tests, so the buttons may work there too, but its sensor bytes are different.
 
 Receiving: the chip hands over raw chips (its own Manchester decoder locks on the wrong chip phase about half the
-time with this short preamble), synced on the 16 chips of `ce`, and the ESP decodes them. Sending: the chip does
+time with this short preamble), synced on the 16 chips of `ce`, and the ESP decodes them. The station answers the RC 14 ms after its packet, so the component sets the main loop interval to 2 ms (the
+default 16 ms misses most answers). Sending: the chip does
 the Manchester coding itself (an ESP8266 cannot time 10 µs chips in software while WiFi runs).
 
 ## Protocol
