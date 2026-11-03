@@ -260,7 +260,17 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
   }
 }
 
+// The station answers a command with its state from before it: a mode command is sent a second time, so that the
+// second answer already has the new mode (like pressing A/M twice on the RC) and auto_mode follows at once.
 bool ElsnerArexa::send_command(Command cmd) {
+  if (!this->send_command_(cmd))
+    return false;
+  if (cmd == CMD_AUTO || cmd == CMD_MANUAL)
+    this->set_timeout("mode_again", 400, [this, cmd]() { this->send_command_(cmd); });
+  return true;
+}
+
+bool ElsnerArexa::send_command_(Command cmd) {
   if (!this->learned_ || this->v5_ < 0) {
     ESP_LOGW(TAG, "No Arexa packet heard yet (the RC sends one every minute): not sending");
     return false;

@@ -77,6 +77,7 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
 
  protected:
   void decode_(const std::vector<uint8_t> &chips, float rssi, float freq_offset);
+  bool send_command_(Command cmd);
   void send_frame_(const std::vector<uint8_t> &frame);
 
   cc1101::CC1101Component *radio_{nullptr};
