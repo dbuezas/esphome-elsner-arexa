@@ -53,7 +53,7 @@ The full example with all sensors is in [examples/elsner-arexa.yaml](examples/el
 | `switch` | `auto_mode` (on: automatic, off: manual; it shows the station's mode) |
 | `button` | `open`, `stop`, `down`, `auto`, `manual` |
 | `event` | `remote` (event types `open`, `stop`, `down`, `auto`, `manual`) |
-| `text_sensor` | `system`: the system bytes of the RC heard on the air; `station_raw`: the station's value bytes 17..32 (for working out new values) |
+| `text_sensor` | `system`: the system bytes of the RC heard on the air; `station_raw`: the station's value bytes 17..32 (for working out new values); `last_command`: the result of the last command sent (see below) |
 
 **System (the pairing):** by default (`system: auto`) the component learns your RC's system ID and the RC's and
 the station's addresses from the RC's first status packet. The `system` text sensor shows what arrives, as 18 hex
@@ -67,6 +67,15 @@ Then the buttons work as soon as any Arexa packet (RC or station) has brought th
 
 **Sharing the radio:** if something else uses the same CC1101 (for example a `remote_transmitter` in OOK mode), call
 `id(<your elsner_arexa id>).start_listening();` after it, to put the radio back into Arexa mode.
+
+**Sending and its result:** a command goes out as 3 copies 30 ms apart. The station answers the first copy it
+hears, 14 ms later, with the command's counter. Without that answer, I send again with a new counter every 300 ms,
+at most 4 times. A mode command needs one more send, because the station answers with its mode from before the
+command: it counts as done when an answer shows the new mode. About 1 station answer in 5 is not heard, so a
+second send happens now and then. The `last_command` text sensor shows the result, so an automation can alert:
+`stop: confirmed`, `stop: no answer after 4 sends`, `auto: mode unchanged after 4 sends`,
+`stop: not sent, RC not heard yet`, or `open: replaced by stop` (a new command stops the one being sent). Failures
+are also logged as warnings.
 
 **After a restart** the buttons work once the component has heard one RC status packet (the RC sends one every
 minute), or with a fixed `system` once any Arexa packet came in. Until then they log a warning and send nothing.

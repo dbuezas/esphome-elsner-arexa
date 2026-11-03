@@ -118,6 +118,16 @@ void ElsnerArexa::loop() {
   for (auto &item : this->queue_)
     this->decode_(item.chips, item.rssi, item.freq_offset);
   this->queue_.clear();
+  if (this->cmd_ < 0)
+    return;
+  // the station answers 14 ms after a copy it takes; it ignores the later copies (same counter)
+  const uint32_t t = millis() - this->send_ms_;
+  if (this->copies_ < 3 && t >= 30u * this->copies_)
+    this->transmit_();
+  else if (t >= 300 && this->sends_ < 4)
+    this->new_send_();
+  else if (t >= 300)
+    this->finish_(this->answered_ ? "mode unchanged after 4 sends" : "no answer after 4 sends");
 }
 
 void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_offset) {
@@ -248,6 +258,17 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
       this->remote_->trigger(COMMAND_NAMES[cmd]);
 #endif
   } else if (sender == this->station_address_ && (!ok[31] || v[31] == 0x30) && (!ok[32] || v[32] == 0x30)) {
+    // the answer to the command being sent carries its counter. A mode command is done when the answer has the new
+    // mode: the station answers with its state from before the command, so that takes a second send.
+    if (this->cmd_ >= 0 && have(5, 7) && v[5] == this->sent_v5_ && v[7] == this->v7_) {
+      const bool mode = this->cmd_ == CMD_AUTO || this->cmd_ == CMD_MANUAL;
+      if (!mode || (have(25, 25) && v[25] == (this->cmd_ == CMD_AUTO ? 0xbf : 0xb3))) {
+        this->finish_("confirmed");
+      } else {
+        this->answered_ = true;
+        this->copies_ = 3;
+      }
+    }
     // the station's status (the start-up packets after a battery change have 00/ff in bytes 31..35). The station
     // is often weaker than the RC and its packets are often damaged: use each field whose bytes are clean.
 #ifdef USE_TEXT_SENSOR
@@ -287,8 +308,6 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
 #endif
     if (have(25, 25) && (v[25] == 0xb3 || v[25] == 0xbf)) {
       const bool automatic = v[25] == 0xbf;  // 0xb3 manual, 0xbf automatic
-      if (this->pending_mode_ == automatic)
-        this->pending_mode_ = -1;
 #ifdef USE_BINARY_SENSOR
       if (this->auto_mode_ != nullptr)
         this->auto_mode_->publish_state(automatic);
@@ -301,80 +320,81 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
   }
 }
 
-// The station answers a command with its state from before it: a mode command is sent again (like pressing A/M
-// twice on the RC) until an answer has the new mode, so auto_mode follows at once. An answer can get lost.
 bool ElsnerArexa::send_command(Command cmd) {
-  if (!this->send_command_(cmd))
-    return false;
-  if (cmd == CMD_AUTO || cmd == CMD_MANUAL) {
-    this->pending_mode_ = cmd == CMD_AUTO;
-    this->mode_again_(3);
+  if (this->cmd_ >= 0) {
+    std::string result = std::string("replaced by ") + COMMAND_NAMES[cmd];
+    this->finish_(result.c_str());
   }
+  if (!this->learned_ || this->v5_ < 0) {
+    this->cmd_ = cmd;
+    this->finish_("not sent, RC not heard yet");
+    return false;
+  }
+  this->cmd_ = cmd;
+  this->sends_ = 0;
+  this->answered_ = false;
+  this->new_send_();
   return true;
 }
 
-void ElsnerArexa::mode_again_(int left) {
-  this->set_timeout("mode_again", left == 3 ? 200 : 300, [this, left]() {
-    if (this->pending_mode_ < 0)
-      return;
-    this->send_command_(this->pending_mode_ ? CMD_AUTO : CMD_MANUAL);
-    if (left > 1)
-      this->mode_again_(left - 1);
-    else
-      this->pending_mode_ = -1;
-  });
+void ElsnerArexa::finish_(const char *result) {
+  if (strcmp(result, "confirmed") == 0)
+    ESP_LOGI(TAG, "%s: confirmed after %d send%s", COMMAND_NAMES[this->cmd_], this->sends_, this->sends_ == 1 ? "" : "s");
+  else
+    ESP_LOGW(TAG, "%s: %s", COMMAND_NAMES[this->cmd_], result);
+#ifdef USE_TEXT_SENSOR
+  if (this->last_command_ != nullptr)
+    this->last_command_->publish_state(std::string(COMMAND_NAMES[this->cmd_]) + ": " + result);
+#endif
+  this->cmd_ = -1;
 }
 
-bool ElsnerArexa::send_command_(Command cmd) {
-  if (!this->learned_ || this->v5_ < 0) {
-    ESP_LOGW(TAG, "No Arexa packet heard yet (the RC sends one every minute): not sending");
-    return false;
-  }
+// A fresh frame with the next counter (the station takes a packet only if its counter is newer than the last one)
+void ElsnerArexa::new_send_() {
   uint8_t value[36] = {0};
   for (int k = 17; k < 36; k++)
     value[k] = 0x30;
   for (int i = 0; i < 9; i++)
     value[8 + i] = this->system_[i];
   for (int i = 0; i < 3; i++)
-    value[17 + i] = COMMANDS[cmd][i];
-  // the station takes a packet only if its counter is newer than the last one
+    value[17 + i] = COMMANDS[this->cmd_][i];
   const uint8_t v5 = this->v5_ - 2;
   this->v5_ = v5;
+  this->sent_v5_ = v5;
   value[5] = v5;
   value[6] = this->k_ - 2 * v5;
   value[7] = this->v7_;
   const uint8_t seed = random_uint32() & 0xff;
-  std::vector<uint8_t> c = {0xce, 0xad, 0x93, 0xba, seed};
+  auto &c = this->frame_;
+  c = {0xce, 0xad, 0x93, 0xba, seed};
   for (int k = 5; k < 36; k++)
     c.push_back(value[k] + parity_bit(seed, k) + 2 * c[k - 1]);
   const uint16_t crc = crc16(c.data(), 36);
   c.push_back(crc >> 8);
   c.push_back(crc & 0xff);
-  ESP_LOGD(TAG, "Sending %s with counter %02x", COMMAND_NAMES[cmd], v5);
-  this->send_frame_(c);
-  return true;
+  this->sends_++;
+  this->copies_ = 0;
+  this->send_ms_ = millis();
+  ESP_LOGD(TAG, "Sending %s with counter %02x (send %d)", COMMAND_NAMES[this->cmd_], v5, this->sends_);
+  this->transmit_();
 }
 
-// The chip sends it: packet mode with its own Manchester. The sync word 00 0a: the zero byte gives 16 alternating
-// chips like the RC's preamble, 0a is the anchor. Then the 38 frame bytes. Three copies, like the RC repeats a
-// command until the station answers.
-void ElsnerArexa::send_frame_(const std::vector<uint8_t> &frame) {
+// One copy of the frame. The chip sends it: packet mode with its own Manchester. The sync word 00 0a: the zero byte
+// gives 16 alternating chips like the RC's preamble, 0a is the anchor. Then the 38 frame bytes.
+void ElsnerArexa::transmit_() {
   auto *r = this->radio_;
-  for (int copy = 0; copy < 3; copy++) {
-    r->set_manchester(true);
-    r->set_sync1(0x00);
-    r->set_sync0(0x0a);
-    r->set_packet_length(frame.size());
-    r->set_num_preamble(0);  // 2 bytes, the minimum
-    r->set_fsk_deviation(40e3f);  // comes out at about the RC's +-35 kHz
-    r->set_output_power(this->output_power_);
-    const auto err = r->transmit_packet(frame);
-    if (err != cc1101::CC1101Error::NONE)
-      ESP_LOGW(TAG, "transmit_packet failed: %d", (int) err);
-    this->start_listening();
-    if (copy < 2)
-      delay(30);  // the station answers in between
-  }
+  r->set_manchester(true);
+  r->set_sync1(0x00);
+  r->set_sync0(0x0a);
+  r->set_packet_length(this->frame_.size());
+  r->set_num_preamble(0);  // 2 bytes, the minimum
+  r->set_fsk_deviation(40e3f);  // comes out at about the RC's +-35 kHz
+  r->set_output_power(this->output_power_);
+  const auto err = r->transmit_packet(this->frame_);
+  if (err != cc1101::CC1101Error::NONE)
+    ESP_LOGW(TAG, "transmit_packet failed: %d", (int) err);
+  this->start_listening();
+  this->copies_++;
 }
 
 void ElsnerArexa::dump_config() {

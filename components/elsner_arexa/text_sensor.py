@@ -9,6 +9,7 @@ DEPENDENCIES = ["elsner_arexa"]
 
 CONF_SYSTEM = "system"
 CONF_STATION_RAW = "station_raw"
+CONF_LAST_COMMAND = "last_command"
 
 CONFIG_SCHEMA = cv.Schema(
     {
@@ -21,6 +22,9 @@ CONFIG_SCHEMA = cv.Schema(
         cv.Optional(CONF_STATION_RAW): text_sensor.text_sensor_schema(
             icon="mdi:hexadecimal", entity_category=ENTITY_CATEGORY_DIAGNOSTIC
         ),
+        # the result of the last command sent: "open: confirmed", "open: no answer after 4 sends",
+        # "auto: mode unchanged after 4 sends", "open: not sent, RC not heard yet", "open: replaced by stop"
+        cv.Optional(CONF_LAST_COMMAND): text_sensor.text_sensor_schema(icon="mdi:check-network"),
     }
 )
 
@@ -33,3 +37,6 @@ async def to_code(config):
     if CONF_STATION_RAW in config:
         t = await text_sensor.new_text_sensor(config[CONF_STATION_RAW])
         cg.add(hub.set_station_raw_text_sensor(t))
+    if CONF_LAST_COMMAND in config:
+        t = await text_sensor.new_text_sensor(config[CONF_LAST_COMMAND])
+        cg.add(hub.set_last_command_text_sensor(t))

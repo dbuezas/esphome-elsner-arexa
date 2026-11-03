@@ -49,7 +49,8 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
   // Puts the radio back into Arexa receive mode. Call it after something else used the same CC1101
   // (for example a remote_transmitter in OOK mode).
   void start_listening();
-  // Builds a fresh RC command frame (current counter, random seed) and sends it. False if no RC packet was heard yet.
+  // Sends an RC command (current counter, random seed) until the station answers it: a new counter every 300 ms, at
+  // most 4 sends. The result goes to the log and the last command text sensor. False if no RC packet was heard yet.
   bool send_command(Command cmd);
 
 #ifdef USE_SENSOR
@@ -80,13 +81,14 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
 #ifdef USE_TEXT_SENSOR
   void set_system_text_sensor(text_sensor::TextSensor *s) { this->system_text_ = s; }
   void set_station_raw_text_sensor(text_sensor::TextSensor *s) { this->station_raw_ = s; }
+  void set_last_command_text_sensor(text_sensor::TextSensor *s) { this->last_command_ = s; }
 #endif
 
  protected:
   void decode_(const std::vector<uint8_t> &chips, float rssi, float freq_offset);
-  bool send_command_(Command cmd);
-  void mode_again_(int left);
-  void send_frame_(const std::vector<uint8_t> &frame);
+  void new_send_();
+  void transmit_();
+  void finish_(const char *result);
 
   cc1101::CC1101Component *radio_{nullptr};
   float frequency_{868.19e6f};
@@ -97,7 +99,15 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
     float freq_offset;
   };
   std::vector<Received> queue_;
-  int pending_mode_{-1};  // a mode sent but not yet in an answer: 1 automatic, 0 manual
+
+  // the command being sent (-1: none). Each send has a new counter and goes out as 3 copies 30 ms apart.
+  int cmd_{-1};
+  int sends_{0};
+  int copies_{0};  // copies of the current send so far
+  uint8_t sent_v5_{0};  // the counter of the current send
+  uint32_t send_ms_{0};  // when the current send started
+  bool answered_{false};  // the station answered some send of this command (for a mode command: with the old mode)
+  std::vector<uint8_t> frame_;
 
   void use_system_(const uint8_t *system);
 
@@ -143,6 +153,7 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
 #ifdef USE_TEXT_SENSOR
   text_sensor::TextSensor *system_text_{nullptr};
   text_sensor::TextSensor *station_raw_{nullptr};
+  text_sensor::TextSensor *last_command_{nullptr};
   std::string system_seen_;
 #endif
 };
@@ -159,8 +170,8 @@ class ArexaButton : public button::Button, public Parented<ElsnerArexa> {
 #endif
 
 #ifdef USE_SWITCH
-// on: automatic mode, off: manual. Its state is the station's (byte 25): the station answers the second of the two
-// mode packets with the new mode within a second.
+// on: automatic mode, off: manual. Its state is the station's (byte 25): the station answers the second mode send
+// with the new mode within a second.
 class ArexaAutoModeSwitch : public switch_::Switch, public Parented<ElsnerArexa> {
  protected:
   void write_state(bool state) override { this->parent_->send_command(state ? CMD_AUTO : CMD_MANUAL); }

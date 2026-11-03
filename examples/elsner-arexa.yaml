@@ -97,3 +97,5 @@ text_sensor:
       name: Arexa System
     station_raw:
       name: Arexa Station Raw
+    last_command:
+      name: Arexa Last Command
