@@ -12,20 +12,12 @@ release). Ordered by priority.
 - 10 Stop presses, 1 s apart: all sent, 8 answers heard (6 clean, 2 with bad bytes at different positions). Same
   rates as the spontaneous reports, so the losses are reception, not the send path.
 
-## High
+## Done
 
-### 1. Confirm every command, retry, and fail loudly
-Open, Stop and Down are sent once (3 blind copies, same counter). Auto and Manual are resent up to 4 times until an
-answer shows the new mode. About 1 answer in 5 is not heard.
-- Retry all commands: new counter each time, every ~300 ms, up to 4 sends, until a station answer **with the counter
-  just sent** arrives. Check first (log `v5` of the answers) that the answer really carries that counter. My SDR
-  logs say it does (station `7c` after RC `7c`); confirm it on the gateway.
-- Mode commands keep their extra condition (the answer must show the new mode).
-- Report the result: `ESP_LOGW` on failure, plus a `last_command` text sensor (`open: confirmed`,
-  `open: no answer after 4 sends`, `open: not sent, RC not heard yet`) or an event, so an HA automation can alert.
-  A button cannot return an error to HA.
-- The send is blocking today: 3 copies with `delay(30)` between them (~80 ms in the main loop). Make it a
-  non-blocking state machine (send one copy, wait for the answer in `loop()`, resend), which also fixes #3.
+- Done on 2026-11-03: #1 (confirmed sends, Last Command sensor), #3 (fixed by the non-blocking send: station
+  answers to a send read -62 dBm like its minute answers), the per-packet log of #6.
+
+## High
 
 ### 2. Received packets are not checked against the system ID
 `decode_` accepts a station packet when byte 10 (or 15) equals the station address. The system ID (bytes 8, 9 and
@@ -38,22 +30,18 @@ the copy in 13, 14) is never compared.
 - Fix: drop packets whose clean bytes 8, 9 (or 13, 14) differ from the own system; take the counter only from own
   packets.
 
-### 3. RC/Station Signal and Frequency Offset are wrong around commands
-During the Stop test the station answers read -77 to -96 dBm (its minute answers: about -60 dBm), and history shows
-station offsets of -50 to -68 kHz around 11:00 UTC (probably the tests from then). Likely cause: the driver reads the
-RSSI and FREQEST registers when its `loop()` runs, not from the packet. While `send_frame_` blocks, the answer to
-copy 1 or 2 waits in the FIFO, the radio transmits the next copy and re-enters RX, and the registers then hold the
-noise floor. (Appended status bytes are not an option: the 64-byte packet fills the FIFO.)
-- Don't publish RSSI or offset for a packet that was read after a transmit, or (better) fix it with the non-blocking
-  send from #1.
-
-### 4. Fields without a check of their own can be wrong silently
-There is no CRC (it is past the 64-byte FIFO). A chip pair that is inverted (`10` read as `01`) is not detected, so a
-byte can be wrong while marked clean. The temperatures and wind have a check byte; these don't:
-- `wind_alarm`: on for **any** value of byte 28 other than `27`, so one bad byte raises a wind alarm.
-- `rain` (byte 21), `brightness` (24), `auto_mode` (25, only `b3`/`bf` accepted, which helps), `rain_sensor` (29).
-- For the binary sensors, change state only after two packets in a row agree (they arrive every minute, and the
-  station holds an alarm for minutes anyway).
+### 4. Receive the CRC: fields without a check of their own can be wrong silently
+A chip pair that is inverted (`10` read as `01`) is not detected, so a byte can be wrong while marked clean. The
+temperatures and wind have a check byte; `wind_alarm` (on for any byte 28 other than `27`, so one bad byte raises a
+wind alarm), `rain` (21), `brightness` (24), `auto_mode` (25) and `rain_sensor` (29) don't. The frame's CRC would
+catch all of it, but it never arrives: 38 frame bytes are 608 chips, the 64-byte FIFO holds 512 (frame bytes 1..32).
+- Option A: read the FIFO while the packet comes in (FIFO threshold, packet length 76) and keep the software
+  Manchester. Needs a change in (or a copy of) the cc1101 driver, which reads only at the end of a packet.
+- Option B: let the chip decode the Manchester (38 bytes fit). The bad-byte marks are lost, so a packet with one
+  broken chip is lost entirely (20-33% of the station's packets today): use the CRC-checked packet for the fields
+  without a check, and keep the software path for the rest?
+- Then publish `wind_alarm`, `rain`, `brightness`, `auto_mode` and `rain_sensor` only from packets whose CRC
+  matches.
 - Brightness has no check byte: `2 * v22 + v23` is not constant (0x25..0x38 over two hours), so 22, 23 is not a pair
   like 17, 18, and byte 24 stands alone.
 
@@ -68,8 +56,6 @@ untested too.
 ## Medium
 
 ### 6. Diagnostics for reception
-- A per-packet debug log line: sender, counter, RSSI, bad byte positions. Today only startup, sends and RC presses
-  are logged, so the log shows nothing about reception.
 - A diagnostic sensor for the station hit rate: count RC status packets with and without a station answer within
   ~50 ms. That turns "it worked better this morning" into a graph.
 - Not the cause of lost station answers (measured on 2026-11-03 with a timed copy of the cc1101 driver): latency
@@ -101,5 +87,3 @@ The window closes; `down` probably comes from the Solexa (shade) or the RC's arr
   `TYPES` in button.py, `EVENT_TYPES` in event.py. Generate from one list, or at least add a comment in each place.
 - `validate_system`: check that bytes 8, 9 equal 13, 14, to catch a typo.
 - Wind: one byte, so at most 25.5 m/s; what the station sends above that is unknown.
-- The auto mode switch gives no feedback when the send fails (not learned yet): covered by #1's status.
-- README: describe the 3 copies per send, the retries, and what the status sensor reports.
