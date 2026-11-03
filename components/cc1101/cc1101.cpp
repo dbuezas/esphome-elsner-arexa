@@ -216,13 +216,8 @@ void CC1101Component::loop() {
     }
     payload_length = this->state_.PKTLEN;
     const size_t have = this->packet_.size(), left = payload_length - have;
-    if (rx_bytes > left) {
-      ESP_LOGW(TAG, "Invalid packet: rx_bytes %u, %u left", rx_bytes, static_cast<unsigned>(left));
-      this->restart_rx_();
-      this->disable_loop();
-      return;
-    }
-    const uint8_t n = rx_bytes < left ? rx_bytes - 1 : rx_bytes;
+    // more than left (seen once, after a TX during the packet): finish this packet, the rest is flushed below
+    const uint8_t n = rx_bytes < left ? rx_bytes - 1 : left;
     if (have == 0)
       this->packet_start_ms_ = millis();
     this->packet_.resize(have + n);
