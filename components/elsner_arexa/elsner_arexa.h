@@ -18,6 +18,9 @@
 #ifdef USE_TEXT_SENSOR
 #include "esphome/components/text_sensor/text_sensor.h"
 #endif
+#ifdef USE_SWITCH
+#include "esphome/components/switch/switch.h"
+#endif
 #include <utility>
 #include <vector>
 
@@ -67,6 +70,9 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
   void set_rain_binary_sensor(binary_sensor::BinarySensor *s) { this->rain_ = s; }
   void set_wind_alarm_binary_sensor(binary_sensor::BinarySensor *s) { this->wind_alarm_ = s; }
   void set_auto_mode_binary_sensor(binary_sensor::BinarySensor *s) { this->auto_mode_ = s; }
+#endif
+#ifdef USE_SWITCH
+  void set_auto_mode_switch(switch_::Switch *s) { this->auto_mode_switch_ = s; }
 #endif
 #ifdef USE_EVENT
   void set_remote_event(event::Event *e) { this->remote_ = e; }
@@ -125,6 +131,9 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
   binary_sensor::BinarySensor *wind_alarm_{nullptr};
   binary_sensor::BinarySensor *auto_mode_{nullptr};
 #endif
+#ifdef USE_SWITCH
+  switch_::Switch *auto_mode_switch_{nullptr};
+#endif
 #ifdef USE_EVENT
   event::Event *remote_{nullptr};
 #endif
@@ -142,6 +151,15 @@ class ArexaButton : public button::Button, public Parented<ElsnerArexa> {
  protected:
   void press_action() override { this->parent_->send_command(this->cmd_); }
   Command cmd_{CMD_STOP};
+};
+#endif
+
+#ifdef USE_SWITCH
+// on: automatic mode, off: manual. Its state is the station's (byte 25): the station answers the second of the two
+// mode packets with the new mode within a second.
+class ArexaAutoModeSwitch : public switch_::Switch, public Parented<ElsnerArexa> {
+ protected:
+  void write_state(bool state) override { this->parent_->send_command(state ? CMD_AUTO : CMD_MANUAL); }
 };
 #endif
 

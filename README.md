@@ -8,6 +8,7 @@ An ESPHome component for the **Elsner Arexa** window control (Arexa 230 V: a bat
 station that drives the window motor). With a CC1101 868 MHz module it gives you in Home Assistant:
 
 - **Buttons:** open, stop, down, automatic mode, manual mode. They work like the RC's own buttons.
+- **A switch** for automatic mode.
 - **Sensors:** inside temperature (from the RC), outside temperature, wind, brightness, rain alarm, rain sensor,
   automatic or manual mode.
 - **An event** for every press on the real RC.
@@ -49,6 +50,7 @@ The full example with all sensors is in [examples/elsner-arexa.yaml](examples/el
 |---|---|
 | `sensor` | `inside_temperature`, `outside_temperature`, `wind`, `brightness`, `rain_sensor`, `rc_rssi`, `station_rssi`, `rc_freq_offset`, `station_freq_offset`, and `raw_inside`, `raw_outside`, `raw_brightness` (for calibration) |
 | `binary_sensor` | `rain` (the station's rain alarm), `wind_alarm`, `auto_mode` (on in automatic mode) |
+| `switch` | `auto_mode` (on: automatic, off: manual; it shows the station's mode) |
 | `button` | `open`, `stop`, `down`, `auto`, `manual` |
 | `event` | `remote` (event types `open`, `stop`, `down`, `auto`, `manual`) |
 | `text_sensor` | `system`: the system bytes of the RC heard on the air |

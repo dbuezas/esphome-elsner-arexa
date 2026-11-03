@@ -68,6 +68,11 @@ binary_sensor:
     auto_mode:
       name: Arexa Auto Mode
 
+switch:
+  - platform: elsner_arexa
+    auto_mode:
+      name: Arexa Automatic
+
 button:
   - platform: elsner_arexa
     open:
@@ -77,7 +82,7 @@ button:
     down:
       name: Arexa Down
     auto:
-      name: Arexa Auto
+      name: Arexa Automatic
     manual:
       name: Arexa Manual
 
