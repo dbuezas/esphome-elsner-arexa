@@ -7,7 +7,7 @@ Post in HA forum: https://community.home-assistant.io/t/elsner-arexa-solexa-868-
 An ESPHome component for the **Elsner Arexa** window control (Arexa 230 V: a battery RC handset and a weather
 station that drives the window motor). With a CC1101 868 MHz module it gives you in Home Assistant:
 
-- **Buttons:** open, stop, down, automatic mode, manual mode. They work like the RC's own buttons.
+- **Buttons:** open, stop, close, automatic mode, manual mode. They work like the RC's own buttons.
 - **A switch** for automatic mode.
 - **Sensors:** inside temperature (from the RC), outside temperature, wind, brightness, rain alarm, rain sensor,
   automatic or manual mode.
@@ -44,7 +44,7 @@ button:
   - platform: elsner_arexa
     open: { name: Arexa Open }
     stop: { name: Arexa Stop }
-    down: { name: Arexa Down }
+    close: { name: Arexa Close }
     auto: { name: Arexa Auto }
     manual: { name: Arexa Manual }
 ```
@@ -56,8 +56,8 @@ The full example with all sensors is in [examples/elsner-arexa.yaml](examples/el
 | `sensor` | `inside_temperature`, `outside_temperature`, `wind`, `brightness`, `rain_sensor`, `rc_rssi`, `station_rssi`, `rc_freq_offset`, `station_freq_offset`, and `raw_inside`, `raw_outside`, `raw_brightness` (for calibration) |
 | `binary_sensor` | `rain` (the station's rain alarm), `wind_alarm`, `auto_mode` (on in automatic mode) |
 | `switch` | `auto_mode` (on: automatic, off: manual; it shows the station's mode) |
-| `button` | `open`, `stop`, `down` (or `close`, the same), `auto`, `manual` |
-| `event` | `remote` (event types `open`, `stop`, `down`, `auto`, `manual`; one event per press: the RC's repeats have the same counter) |
+| `button` | `open`, `stop`, `close`, `auto`, `manual` |
+| `event` | `remote` (event types `open`, `stop`, `close`, `auto`, `manual`; one event per press: the RC's repeats have the same counter) |
 | `text_sensor` | `system`: the system bytes of the RC heard on the air; `station_raw`: the station's value bytes 17..32 (for working out new values); `last_command`: the result of the last command sent (see below) |
 
 **System (the pairing):** by default (`system: auto`) the component learns your RC's system ID and the RC's and
@@ -83,7 +83,7 @@ second send happens now and then. The `last_command` text sensor shows the resul
 `stop: not sent, RC not heard yet`, or `open: replaced by stop` (a new command stops the one being sent). Failures
 are also logged as warnings.
 
-**Open, Stop and Down end automatic mode**, like on the RC: the station switches to manual (seen with Stop). Send
+**Open, Stop and Close end automatic mode**, like on the RC: the station switches to manual (seen with Stop). Send
 Auto afterwards if the station should go on reacting to rain and wind by itself.
 
 **After a restart** the buttons work once the component has heard an RC status packet (the RC sends one every
@@ -176,7 +176,7 @@ RC commands (bytes 17, 18, 19), the same on the Solexa recordings:
 | status (once a minute) | 6a | 30 | 30 |
 | open | 25 | ba | 30 |
 | stop | 27 | b6 | 30 |
-| down | 36 | 98 | 30 |
+| close | 36 | 98 | 30 |
 | automatic mode | 6a | 1f | 52 |
 | manual mode | 6a | 13 | 6a |
 

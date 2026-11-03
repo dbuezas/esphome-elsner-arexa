@@ -79,8 +79,8 @@ button:
       name: Arexa Open
     stop:
       name: Arexa Stop
-    down:
-      name: Arexa Down
+    close:
+      name: Arexa Close
     auto:
       name: Arexa Auto
     manual:

@@ -19,7 +19,7 @@ release). Ordered by priority.
   own packets), #4 (the whole frame with its CRC: a copy of the cc1101 driver reads
   packets longer than the FIFO; the fields without a check, the counter and the learning need a matching CRC).
 - Also done on 2026-11-03: #7 (inside temperature checked by byte 23), #9 (RC presses de-duplicated by counter),
-  #10 (`close` as another name for `down`), #5 in part (see below), the command order noted at each list.
+  #10 (`down` renamed to `close`), #5 in part (see below), the command order noted at each list.
 - Fixed on 2026-11-03: a send across `v5 = 00` kept the old `v7` and K, and the station ignored it (and every send
   after it until the RC resynced). Now `v7 + 2`, `K - 1`, as the RC does; tested with 140 Stop sends across a wrap.
 

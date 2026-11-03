@@ -19,12 +19,12 @@ static const uint8_t INV[36] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 
 static const uint8_t COMMANDS[5][3] = {
     {0x25, 0xba, 0x30},  // open
     {0x27, 0xb6, 0x30},  // stop
-    {0x36, 0x98, 0x30},  // down
+    {0x36, 0x98, 0x30},  // close
     {0x6a, 0x1f, 0x52},  // automatic mode
     {0x6a, 0x13, 0x6a},  // manual mode
 };
 // in the order of the Command enum
-static const char *const COMMAND_NAMES[5] = {"open", "stop", "down", "auto", "manual"};
+static const char *const COMMAND_NAMES[5] = {"open", "stop", "close", "auto", "manual"};
 
 static uint16_t crc16(const uint8_t *data, size_t len) {
   uint16_t crc = 0x68b3;

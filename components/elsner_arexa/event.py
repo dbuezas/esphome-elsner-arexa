@@ -8,8 +8,8 @@ from . import CONF_ELSNER_AREXA_ID, ElsnerArexa
 DEPENDENCIES = ["elsner_arexa"]
 
 CONF_REMOTE = "remote"
-# in the order of the Command enum (elsner_arexa.h); a close press is the event type "down"
-EVENT_TYPES = ["open", "stop", "down", "auto", "manual"]
+# in the order of the Command enum (elsner_arexa.h)
+EVENT_TYPES = ["open", "stop", "close", "auto", "manual"]
 
 CONFIG_SCHEMA = cv.Schema(
     {
