@@ -78,7 +78,8 @@ void ElsnerArexa::setup() {
 // Receive settings. The chips are 10.000 us (100 kbaud), 2-FSK with ~+-35 kHz deviation, Manchester coded (1 = chips
 // 10, 0 = 01). The preamble is only ~13 alternating chips, which fit both chip phases, so the chip's own Manchester
 // decoder often locks on the wrong phase: it hands over raw chips instead. The sync word is the 16 chips of the first
-// frame byte 0xce, which fixes the phase. 64 FIFO bytes = 512 chips = frame bytes 1..32 (the CRC does not fit).
+// frame byte 0xce, which fixes the phase. 74 FIFO bytes = 592 chips = frame bytes 1..37, with the CRC: more than
+// the 64-byte FIFO, so the cc1101 copy in this repo reads it while it arrives (the stock driver drops such packets).
 void ElsnerArexa::start_listening() {
   auto *r = this->radio_;
   r->set_frequency(this->frequency_);
@@ -102,7 +103,7 @@ void ElsnerArexa::start_listening() {
   r->set_freeze(cc1101::Freeze::FREEZE_ON_SYNC);
   r->set_crc_enable(false);
   r->set_whitening(false);
-  r->set_packet_length(64);
+  r->set_packet_length(74);
   r->set_packet_mode(true);
   r->set_output_power(this->output_power_);
   r->begin_rx();
@@ -133,10 +134,14 @@ void ElsnerArexa::loop() {
 void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_offset) {
   // Manchester in software. A broken chip pair (10 or 01 expected) marks its byte as bad, and decoding goes on:
   // the station's packets often have a glitch somewhere and still carry clean fields after it.
-  uint8_t c[33] = {0xce};
-  bool bad[33] = {false};
-  int first_bad = 33;
-  for (size_t k = 0; k + 1 < x.size() * 8 && k / 16 < 32; k += 2) {
+  // N: frame bytes 0..37 (0 is the sync word ce, 36 and 37 the CRC); the cc1101 copy in this repo reads all 74 FIFO
+  // bytes, the stock driver only 64 (bytes 1..32, no CRC)
+  constexpr int N = 38;
+  uint8_t c[N] = {0xce};
+  bool bad[N] = {false};
+  int first_bad = N;
+  int got = 1;  // frame bytes received
+  for (size_t k = 0; k + 1 < x.size() * 8 && k / 16 < N - 1; k += 2) {
     const int a = (x[k >> 3] >> (7 - (k & 7))) & 1, b = (x[(k + 1) >> 3] >> (7 - ((k + 1) & 7))) & 1;
     const size_t i = k / 2, byte = 1 + i / 8;
     if (a == b && !bad[byte]) {
@@ -145,22 +150,36 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
         first_bad = byte;
     }
     c[byte] |= a << (7 - i % 8);
+    got = byte + 1;
   }
-  // no CRC (it is past the end of the FIFO): the 32-bit header and the seed byte must be clean
+  // bytes that did not arrive are bad
+  for (int k = got; k < N; k++)
+    bad[k] = true;
+  if (got < N && first_bad > got)
+    first_bad = got;
+  // the CRC over bytes 0..35: if it matches, every byte is right, broken chip pairs or not
+  const bool crc_ok = got == N && crc16(c, 36) == (c[36] << 8 | c[37]);
+  if (crc_ok) {
+    for (int k = 0; k < N; k++)
+      bad[k] = false;
+    first_bad = N;
+  }
+  // the 32-bit header and the seed byte must be clean
   if (first_bad <= 4 || c[1] != 0xad || c[2] != 0x93 || c[3] != 0xba)
     return;
   const uint8_t seed = c[4];
-  uint8_t v[33] = {0};
-  for (int k = 5; k < 33; k++)
+  uint8_t v[36] = {0};
+  for (int k = 5; k < 36; k++)
     v[k] = c[k] - 2 * c[k - 1] - parity_bit(seed, k);
   // value k needs bytes k and k-1. Bytes after a glitch count only if the frame is still in step there: a known
   // filler byte (0x30) near the end must have arrived clean (after a lost chip, everything later is shifted).
-  bool in_step = first_bad == 33;
-  for (int k = 25; k < 33 && !in_step; k++)
+  bool in_step = first_bad == N;
+  for (int k = 25; k < 36 && !in_step; k++)
     in_step = k > first_bad && !bad[k] && !bad[k - 1] && v[k] == 0x30;
-  // clean: the value's own bytes arrived without a broken pair; ok: also in step (fields without a check of their own)
-  bool clean[33] = {false}, ok[33] = {false};
-  for (int k = 5; k < 33; k++) {
+  // clean: the value's own bytes arrived without a broken pair; ok: also in step. A field without a check of its own
+  // (a pair, a check byte) needs crc_ok: an inverted chip pair (10 read as 01) is not seen as broken.
+  bool clean[36] = {false}, ok[36] = {false};
+  for (int k = 5; k < 36; k++) {
     clean[k] = !bad[k] && !bad[k - 1];
     ok[k] = clean[k] && (k < first_bad || in_step);
   }
@@ -179,9 +198,9 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
   else
     return;
   {
-    char bads[3 * 33 + 1] = "none";
+    char bads[3 * 36 + 1] = "none";
     int n = 0;
-    for (int k = 5; k < 33; k++)
+    for (int k = 5; k < 36; k++)
       if (bad[k])
         n += snprintf(bads + n, sizeof(bads) - n, n ? " %d" : "%d", k);
     const char *from = !this->learned_                      ? "?"
@@ -189,9 +208,10 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
                        : sender == this->station_address_ ? "station"
                                                            : "other";
     if (have(5, 7))
-      ESP_LOGD(TAG, "Packet from %s %02x: counter %02x %02x, %.0f dBm, bad bytes: %s", from, sender, v[5], v[7], rssi, bads);
+      ESP_LOGD(TAG, "Packet from %s %02x: counter %02x %02x, %.0f dBm, CRC %s, bad bytes: %s", from, sender, v[5], v[7], rssi,
+               crc_ok ? "ok" : "wrong", bads);
     else
-      ESP_LOGD(TAG, "Packet from %s %02x: counter not clean, %.0f dBm, bad bytes: %s", from, sender, rssi, bads);
+      ESP_LOGD(TAG, "Packet from %s %02x: counter not clean, %.0f dBm, CRC wrong, bad bytes: %s", from, sender, rssi, bads);
   }
 
   const bool rc_status = have(8, 20) && v[17] == 0x6a && v[18] == 0x30 && v[19] == 0x30 && v[20] == 0x30;
@@ -206,14 +226,9 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
       this->system_text_->publish_state(hex);
     }
 #endif
-    // learn from two status packets in a row with the same system bytes (not from a neighbour's single packet or an
-    // undetected bit error)
-    if (!this->learned_ && this->candidate_seen_ && memcmp(this->candidate_, v + 8, 9) == 0) {
+    if (!this->learned_ && crc_ok) {
       this->use_system_(v + 8);
       ESP_LOGI(TAG, "Learned my RC: system %02x%02x, RC address %02x, station address %02x", v[8], v[9], v[10], v[15]);
-    } else if (!this->learned_) {
-      memcpy(this->candidate_, v + 8, 9);
-      this->candidate_seen_ = true;
     }
   }
   if (!this->learned_)
@@ -230,8 +245,9 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
 
   // the counter (RC and station share it): v5 counts down, v6 = k - 2 v5, v7 changes rarely. Keep the newest one: after
   // a command, the RC's next status has an older counter (the station ignores it, the RC shows ER and resyncs; a
-  // resync starts a new v7). A send with that older counter would be ignored too.
-  if (have(5, 7) && (this->v5_ < 0 || v[7] != this->v7_ || static_cast<int8_t>(v[5] - this->v5_) < 0)) {
+  // resync starts a new v7). A send with that older counter would be ignored too. Only from packets with a matching
+  // CRC: a bit error in byte 7 would reset it.
+  if (crc_ok && (this->v5_ < 0 || v[7] != this->v7_ || static_cast<int8_t>(v[5] - this->v5_) < 0)) {
     this->v5_ = v[5];
     this->v7_ = v[7];
     this->k_ = v[6] + 2 * v[5];
@@ -287,10 +303,10 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
     // is often weaker than the RC and its packets are often damaged: use each field whose bytes are clean.
 #ifdef USE_TEXT_SENSOR
     if (this->station_raw_ != nullptr) {
-      char hex[3 * 16 + 1];
-      for (int k = 17; k < 33; k++)
+      char hex[3 * 19 + 10];
+      for (int k = 17; k < 36; k++)
         snprintf(hex + 3 * (k - 17), 4, ok[k] ? "%02x " : ".. ", v[k]);
-      hex[3 * 16 - 1] = 0;
+      snprintf(hex + 3 * 19, 10, crc_ok ? "CRC ok" : "CRC wrong");
       this->station_raw_->publish_state(hex);
     }
 #endif
@@ -307,20 +323,20 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
       this->raw_outside_->publish_state(v[17]);
     if (clean[19] && clean[20] && static_cast<uint8_t>(2 * v[19] + v[20]) == 0 && this->wind_ != nullptr)
       this->wind_->publish_state(static_cast<uint8_t>(-v[19]) / 10.0f);  // a pair like the temperatures, base 0
-    if (have(24, 24) && this->brightness_ != nullptr)
+    if (crc_ok && this->brightness_ != nullptr)
       this->brightness_->publish_state(v[24] <= 2 ? 0 : (v[24] - 2) * 135.0f);
-    if (have(24, 24) && this->raw_brightness_ != nullptr)
+    if (crc_ok && this->raw_brightness_ != nullptr)
       this->raw_brightness_->publish_state(v[24]);
-    if (have(29, 29) && this->rain_sensor_ != nullptr)
+    if (crc_ok && this->rain_sensor_ != nullptr)
       this->rain_sensor_->publish_state(v[29]);
 #endif
 #ifdef USE_BINARY_SENSOR
-    if (have(21, 21) && this->rain_ != nullptr)
+    if (crc_ok && this->rain_ != nullptr)
       this->rain_->publish_state(v[21] < 0xb0);  // 0xb2 dry, 0xae while the rain alarm holds
-    if (have(28, 28) && this->wind_alarm_ != nullptr)
+    if (crc_ok && this->wind_alarm_ != nullptr)
       this->wind_alarm_->publish_state(v[28] != 0x27);  // 0x27 calm
 #endif
-    if (have(25, 25) && (v[25] == 0xb3 || v[25] == 0xbf)) {
+    if (crc_ok && (v[25] == 0xb3 || v[25] == 0xbf)) {
       const bool automatic = v[25] == 0xbf;  // 0xb3 manual, 0xbf automatic
 #ifdef USE_BINARY_SENSOR
       if (this->auto_mode_ != nullptr)
