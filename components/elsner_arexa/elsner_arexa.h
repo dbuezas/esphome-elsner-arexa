@@ -37,6 +37,8 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
   void set_radio(cc1101::CC1101Component *radio) { this->radio_ = radio; }
   void set_frequency(float frequency) { this->frequency_ = frequency; }
   void set_output_power(float power) { this->output_power_ = power; }
+  // the header byte (0..3: ce ad 93 ba) the radio syncs on; takes effect at the next start_listening()
+  void set_sync_byte(uint8_t b) { this->sync_byte_ = b < 4 ? b : 0; }
   // the pairing (bytes 8..16) to use instead of learning it from the RC; see the README
   void set_fixed_pairing(const std::vector<uint8_t> &pairing);
 
@@ -86,7 +88,7 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
 #endif
 
  protected:
-  void decode_(const std::vector<uint8_t> &chips, float rssi, float freq_offset);
+  void decode_(const std::vector<uint8_t> &chips, float rssi, float freq_offset, uint8_t sync_byte);
   void new_send_();
   void transmit_();
   void finish_(const char *result);
@@ -94,10 +96,12 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
   cc1101::CC1101Component *radio_{nullptr};
   float frequency_{868.19e6f};
   float output_power_{11.0f};
+  uint8_t sync_byte_{0};
   struct Received {
     std::vector<uint8_t> chips;
     float rssi;
     float freq_offset;
+    uint8_t sync_byte;  // the header byte the radio synced on
   };
   std::vector<Received> queue_;
 

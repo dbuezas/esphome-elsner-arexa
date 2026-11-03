@@ -15,6 +15,8 @@ static const uint8_t MASK[36] = {0,    0,    0,    0,    0,    0x01, 0x01, 0x01,
                                  0xff, 0xfe, 0xff, 0x7e, 0xbf, 0x5e, 0xaf, 0x56, 0xab, 0x54, 0xaa, 0x55};
 static const uint8_t INV[36] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0,
                                 1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1};
+// frame bytes 0..3, the same in every packet
+static const uint8_t HEADER[4] = {0xce, 0xad, 0x93, 0xba};
 // RC commands: values of bytes 17, 18, 19 (the same on a second installation's Solexa recordings)
 static const uint8_t COMMANDS[5][3] = {
     {0x25, 0xba, 0x30},  // open
@@ -90,12 +92,13 @@ void ElsnerArexa::start_listening() {
   r->set_filter_bandwidth(270e3f);
   r->set_manchester(false);
   r->set_sync_mode(cc1101::SyncMode::SYNC_MODE_16_16);
-  // To test: about 1 station answer in 8 is lost because its start (preamble, ce, ad) arrives broken and the radio
-  // locks on later inside the packet. Syncing on frame byte 2 instead (93: chips 96 5A) gives the receiver more time
-  // to settle; the chips would then start at byte 3 and the header check would be c[3] == ba only. A short test
-  // decoded fine with fewer noise syncs, but was too short to show fewer misses.
-  r->set_sync1(0xA5);
-  r->set_sync0(0xA9);
+  // the sync word: the 16 chips of header byte sync_byte_ (ce: A5 A9). The bytes before it are known, so the radio
+  // can sync on a later one: the bytes in front then give the receiver more time to settle.
+  uint16_t chips = 0;
+  for (int bit = 7; bit >= 0; bit--)
+    chips = chips << 2 | ((HEADER[this->sync_byte_] >> bit) & 1 ? 0b10 : 0b01);
+  r->set_sync1(chips >> 8);
+  r->set_sync0(chips & 0xff);
   r->set_num_preamble(2);
   r->set_foc_bs_cs_gate(false);  // the preamble is short: correct frequency and bit timing at once
   r->set_wait_time(cc1101::WaitTime::WAIT_TIME_8_SAMPLES);
@@ -104,7 +107,7 @@ void ElsnerArexa::start_listening() {
   r->set_freeze(cc1101::Freeze::FREEZE_ON_SYNC);
   r->set_crc_enable(false);
   r->set_whitening(false);
-  r->set_packet_length(74);
+  r->set_packet_length(2 * (37 - this->sync_byte_));  // the frame bytes after the sync byte, as chips
   r->set_packet_mode(true);
   r->set_output_power(this->output_power_);
   r->begin_rx();
@@ -113,12 +116,12 @@ void ElsnerArexa::start_listening() {
 // Called by the CC1101 driver before it listens again: keep it short (the station answers the RC 14 ms later).
 void ElsnerArexa::on_packet(const std::vector<uint8_t> &packet, float freq_offset, float rssi, uint8_t lqi) {
   if (this->queue_.size() < 8)
-    this->queue_.push_back({packet, rssi, freq_offset});
+    this->queue_.push_back({packet, rssi, freq_offset, this->sync_byte_});
 }
 
 void ElsnerArexa::loop() {
   for (auto &item : this->queue_)
-    this->decode_(item.chips, item.rssi, item.freq_offset);
+    this->decode_(item.chips, item.rssi, item.freq_offset, item.sync_byte);
   this->queue_.clear();
   if (this->cmd_ < 0)
     return;
@@ -132,19 +135,22 @@ void ElsnerArexa::loop() {
     this->finish_(this->answered_ ? "mode unchanged after 4 sends" : "no answer after 4 sends");
 }
 
-void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_offset) {
+void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_offset, uint8_t sync_byte) {
   // Manchester in software. A broken chip pair (10 or 01 expected) marks its byte as bad, and decoding goes on:
   // the station's packets often have a glitch somewhere and still carry clean fields after it.
-  // N: frame bytes 0..37 (0 is the sync word ce, 36 and 37 the CRC); the cc1101 copy in this repo reads all 74 FIFO
-  // bytes, the stock driver only 64 (bytes 1..32, no CRC)
+  // N: frame bytes 0..37 (36 and 37 the CRC). The chips start after the sync byte; the header bytes up to it are
+  // known. The stock cc1101 driver hands over at most 64 FIFO bytes (no CRC); the copy in this repo all of them.
   constexpr int N = 38;
-  uint8_t c[N] = {0xce};
+  const int first = sync_byte + 1;
+  uint8_t c[N] = {0};
   bool bad[N] = {false};
+  for (int k = 0; k < first; k++)
+    c[k] = HEADER[k];
   int first_bad = N;
-  int got = 1;  // frame bytes received
-  for (size_t k = 0; k + 1 < x.size() * 8 && k / 16 < N - 1; k += 2) {
+  int got = first;  // frame bytes received
+  for (size_t k = 0; k + 1 < x.size() * 8 && k / 16 < static_cast<size_t>(N - first); k += 2) {
     const int a = (x[k >> 3] >> (7 - (k & 7))) & 1, b = (x[(k + 1) >> 3] >> (7 - ((k + 1) & 7))) & 1;
-    const size_t i = k / 2, byte = 1 + i / 8;
+    const size_t i = k / 2, byte = first + i / 8;
     if (a == b && !bad[byte]) {
       bad[byte] = true;
       if (byte < static_cast<size_t>(first_bad))
@@ -165,9 +171,12 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
       bad[k] = false;
     first_bad = N;
   }
-  // the 32-bit header and the seed byte must be clean
-  if (first_bad <= 4 || c[1] != 0xad || c[2] != 0x93 || c[3] != 0xba)
+  // the header after the sync byte and the seed byte must be clean
+  if (first_bad <= 4)
     return;
+  for (int k = first; k < 4; k++)
+    if (c[k] != HEADER[k])
+      return;
   const uint8_t seed = c[4];
   uint8_t v[36] = {0};
   for (int k = 5; k < 36; k++)
