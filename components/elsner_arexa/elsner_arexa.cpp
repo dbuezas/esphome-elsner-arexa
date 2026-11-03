@@ -165,8 +165,10 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
   else
     return;
 
-  // the counter (RC and station share it): v5 counts down, v6 = k - 2 v5, v7 changes rarely
-  if (have(5, 7)) {
+  // the counter (RC and station share it): v5 counts down, v6 = k - 2 v5, v7 changes rarely. Keep the newest one: after
+  // a command, the RC's next status has an older counter (the station ignores it, the RC shows ER and resyncs; a
+  // resync starts a new v7). A send with that older counter would be ignored too.
+  if (have(5, 7) && (this->v5_ < 0 || v[7] != this->v7_ || static_cast<int8_t>(v[5] - this->v5_) < 0)) {
     this->v5_ = v[5];
     this->v7_ = v[7];
     this->k_ = v[6] + 2 * v[5];
