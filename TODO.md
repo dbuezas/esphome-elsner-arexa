@@ -25,13 +25,6 @@ release). Ordered by priority.
 
 ## High
 
-### 11. Open and Close end automatic mode: rain protection is off afterwards
-Any Open, Stop or Close (from HA or the RC) switches the station to manual, and in manual it does not close the
-window on rain or wind. For opening the window at night from HA, that is the dangerous case. Options: send Auto right
-after the command (does the station then close at once if its own rules say so?), or an option on the hub to do that.
-Needs a test with someone at home (Open and Close only then).
-
-
 ### 5. Outside temperature above 25.5 °C is unknown
 The station has only a sign bit, so the decoded range is -25.6 to +25.5 °C (the sign is untested too). A CRC-ok
 packet whose bytes 17, 18 fail the pair check now logs a warning with both bytes and publishes no temperature;
@@ -52,12 +45,7 @@ Raw Outside keeps updating from CRC-ok packets. To do: work out the encoding on 
 ### 8. Station Raw lacks the system ID
 Add bytes 8..16 (and the counter 5..7), or a separate text sensor, so foreign or broken packets are visible.
 
-### 12. Unknown station bytes
-Bytes 22, 23 (vary, not a pair), 26, 27 (`34 4e` so far) and 30 (`58`) are not decoded. Candidates: twilight,
-the window's state as the station believes it, the station's thresholds. Now that Station Raw comes with a CRC mark,
-record it over days (rain, wind, a moving window, night and day) and compare.
-
-### 13. Answers to our sends fail the CRC more often
+### 13. Research: answers to our sends fail the CRC more often
 In fast Stop series, 74 of 142 station answers had a matching CRC, against about 80% of its minute answers. The
 counter bytes were mostly clean, so confirmation still worked. Check whether our next copy (30 ms after the first)
 or the RX restart after a TX clips the answer.

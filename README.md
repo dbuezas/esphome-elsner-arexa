@@ -83,8 +83,8 @@ second send happens now and then. The `last_command` text sensor shows the resul
 `stop: not sent, RC not heard yet`, or `open: replaced by stop` (a new command stops the one being sent). Failures
 are also logged as warnings.
 
-**Open, Stop and Close end automatic mode**, like on the RC: the station switches to manual (seen with Stop). Send
-Auto afterwards if the station should go on reacting to rain and wind by itself.
+**Open, Stop and Close end automatic mode**, like on the RC: the station switches to manual (seen with Stop). In
+manual it does not close the window on rain or wind. Send Auto afterwards if it should.
 
 **After a restart** the buttons work once the component has heard an RC status packet (the RC sends one every
 minute), or with a fixed `pairing` once any packet with that system ID came in. Until then they log a warning and send nothing.
@@ -193,6 +193,7 @@ Measurements (Arexa; the Solexa's sensor has a different layout):
 | station | 28 | wind flag: `27` calm |
 | station | 29 | rain sensor reading: `a6` dry, lower = wetter |
 | station | 31..35 | `30` in a status packet (`00`/`ff` in the start-up packets after a battery change) |
+| station | 22, 23, 26, 27, 30 | not decoded (26, 27 were `34 4e`, 30 `58` in all packets so far) |
 
 A temperature is two bytes `a, b` in tenths of a degree: `low = (base - a) & 0xff`, `b = 2 * low + sign`, and
 `tenths = low - 256 * sign`. `base` is 168 for the RC's inside sensor and 154 for the station. The RC also sends the
