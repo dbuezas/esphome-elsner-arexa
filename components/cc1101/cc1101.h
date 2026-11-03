@@ -111,6 +111,7 @@ class CC1101Component final : public Component,
   void call_listeners_(const std::vector<uint8_t> &packet, float freq_offset, float rssi, uint8_t lqi);
   Trigger<std::vector<uint8_t>, float, float, uint8_t> packet_trigger_;
   std::vector<uint8_t> packet_;
+  uint32_t packet_start_ms_{0};  // when the first part of a long packet was read
   std::vector<CC1101Listener *> listeners_;
 
   // Low-level Helpers

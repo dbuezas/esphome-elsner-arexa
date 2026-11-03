@@ -176,9 +176,18 @@ void CC1101Component::call_listeners_(const std::vector<uint8_t> &packet, float 
 }
 
 void CC1101Component::loop() {
-  this->disable_loop();
+  // a long packet being read in parts: poll until it is complete (GDO0 stays high while a byte is left in the FIFO)
+  const bool reading = this->long_packet_() && !this->packet_.empty();
+  if (reading && millis() - this->packet_start_ms_ > 20) {
+    ESP_LOGW(TAG, "Long packet incomplete after 20 ms (%u bytes), flushing", static_cast<unsigned>(this->packet_.size()));
+    this->restart_rx_();
+    this->disable_loop();
+    return;
+  }
+  if (!reading)
+    this->disable_loop();
   if (this->state_.PKT_FORMAT != static_cast<uint8_t>(PacketFormat::PACKET_FORMAT_FIFO) || this->gdo0_pin_ == nullptr ||
-      !this->gdo0_pin_->digital_read()) {
+      (!reading && !this->gdo0_pin_->digital_read())) {
     return;
   }
 
@@ -186,17 +195,20 @@ void CC1101Component::loop() {
   this->read_(Register::RXBYTES);
   uint8_t rx_bytes = this->state_.NUM_RXBYTES;
   bool overflow = this->state_.RXFIFO_OVERFLOW;
+  if (reading && !overflow && rx_bytes <= 1 && this->packet_.size() + rx_bytes < this->state_.PKTLEN)
+    return;  // nothing new yet
   if (overflow || rx_bytes == 0) {
     ESP_LOGW(TAG, "RX FIFO overflow, flushing");
     this->restart_rx_();
+    this->disable_loop();
     return;
   }
 
   // Read packet
   uint8_t payload_length;
   if (this->long_packet_()) {
-    // Longer than the FIFO: the RX threshold (16 bytes) wakes us while it arrives. Read what is there and wait for
-    // the rest, but never the last byte in the FIFO before the packet is complete (CC1101 errata).
+    // Longer than the FIFO: the RX threshold (16 bytes) wakes us while it arrives. Read what is there, then poll in
+    // loop() for the rest, but never read the last byte in the FIFO before the packet is complete (CC1101 errata).
     for (uint8_t n = 0; n != rx_bytes;) {  // errata: NUM_RXBYTES can be wrong while bytes arrive: read it twice
       n = rx_bytes;
       this->read_(Register::RXBYTES);
@@ -207,14 +219,19 @@ void CC1101Component::loop() {
     if (rx_bytes > left) {
       ESP_LOGW(TAG, "Invalid packet: rx_bytes %u, %u left", rx_bytes, static_cast<unsigned>(left));
       this->restart_rx_();
+      this->disable_loop();
       return;
     }
     const uint8_t n = rx_bytes < left ? rx_bytes - 1 : rx_bytes;
+    if (have == 0)
+      this->packet_start_ms_ = millis();
     this->packet_.resize(have + n);
     if (n > 0)
       this->read_(Register::FIFO, this->packet_.data() + have, n);
-    if (rx_bytes < left)
+    if (rx_bytes < left) {
+      this->enable_loop();
       return;
+    }
   } else {
     uint8_t expected_rx;
     if (this->state_.LENGTH_CONFIG == static_cast<uint8_t>(LengthConfig::LENGTH_CONFIG_VARIABLE)) {
@@ -247,6 +264,7 @@ void CC1101Component::loop() {
 
   // Return to rx
   this->restart_rx_();
+  this->disable_loop();
 }
 
 bool CC1101Component::long_packet_() const {
