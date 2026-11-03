@@ -15,20 +15,10 @@ release). Ordered by priority.
 ## Done
 
 - Done on 2026-11-03: #1 (confirmed sends, Last Command sensor), #3 (fixed by the non-blocking send: station
-  answers to a send read -62 dBm like its minute answers), the per-packet log of #6.
+  answers to a send read -62 dBm like its minute answers), the per-packet log of #6, #2 (own system ID only, counter only from
+  own packets, learning from two matching RC status packets).
 
 ## High
-
-### 2. Received packets are not checked against the system ID
-`decode_` accepts a station packet when byte 10 (or 15) equals the station address. The system ID (bytes 8, 9 and
-the copy in 13, 14) is never compared.
-- A neighbouring Arexa with the same station address byte would feed its weather into these sensors.
-- The counter (`v5_`, `v7_`, `k_`) is taken from **any** Arexa frame, before any sender or system check. A foreign
-  packet (or an undetected bit error in byte 7, which resets the counter whenever `v7` differs) moves it, and the
-  next commands carry a counter the own station ignores.
-- `system: auto` pairs with the first RC status packet heard. Require two matching status packets before learning.
-- Fix: drop packets whose clean bytes 8, 9 (or 13, 14) differ from the own system; take the counter only from own
-  packets.
 
 ### 4. Receive the CRC: fields without a check of their own can be wrong silently
 A chip pair that is inverted (`10` read as `01`) is not detected, so a byte can be wrong while marked clean. The
@@ -40,6 +30,8 @@ catch all of it, but it never arrives: 38 frame bytes are 608 chips, the 64-byte
 - Option B: let the chip decode the Manchester (38 bytes fit). The bad-byte marks are lost, so a packet with one
   broken chip is lost entirely (20-33% of the station's packets today): use the CRC-checked packet for the fields
   without a check, and keep the software path for the rest?
+- Reading the whole frame also shows bytes 33..35 (`30` in all SDR recordings of status packets; not seen during
+  rain, wind or a moving window), and removes the remaining risk of a bit error in byte 7 resetting the counter.
 - Then publish `wind_alarm`, `rain`, `brightness`, `auto_mode` and `rain_sensor` only from packets whose CRC
   matches.
 - Brightness has no check byte: `2 * v22 + v23` is not constant (0x25..0x38 over two hours), so 22, 23 is not a pair

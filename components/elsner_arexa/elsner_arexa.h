@@ -114,6 +114,8 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
   // learned from the RC's status packets, or fixed in the configuration
   bool learned_{false};
   bool fixed_{false};
+  uint8_t candidate_[9]{};  // the system bytes of the last RC status packet, while learning
+  bool candidate_seen_{false};
   uint8_t system_[9]{};  // values of bytes 8..16 of the RC's packets: system ID, addresses, device type
   uint8_t rc_address_{0};
   uint8_t station_address_{0};

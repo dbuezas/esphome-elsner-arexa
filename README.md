@@ -56,10 +56,11 @@ The full example with all sensors is in [examples/elsner-arexa.yaml](examples/el
 | `text_sensor` | `system`: the system bytes of the RC heard on the air; `station_raw`: the station's value bytes 17..32 (for working out new values); `last_command`: the result of the last command sent (see below) |
 
 **System (the pairing):** by default (`system: auto`) the component learns your RC's system ID and the RC's and
-the station's addresses from the RC's first status packet. The `system` text sensor shows what arrives, as 18 hex
+the station's addresses from two RC status packets in a row with the same system bytes (about a minute). The `system` text sensor shows what arrives, as 18 hex
 digits (bytes 8 to 16 of the RC's packets: the system ID, the RC's address, the station's address and the device
-types). To skip the learning, put that value into the hub, for example `system: 1a2b3c4d5e1a2b6f70` (made up: use yours).
-Then the buttons work as soon as any Arexa packet (RC or station) has brought the counter.
+types). After that, only packets with this system ID (bytes 8, 9 and 13, 14) count, so a neighbour's Arexa does
+not feed its weather into the sensors or move the counter. To skip the learning, put that value into the hub, for example `system: 1a2b3c4d5e1a2b6f70` (made up: use yours).
+Then the buttons work as soon as any packet of that system (RC or station) has brought the counter.
 
 **Frequency:** cheap CC1101 modules are often 20 to 40 kHz off. Mine needs `frequency: 868.227MHz` to come out at
 868.19 MHz. If the buttons do nothing or only the RC's packets come in, try steps of 10 kHz between 868.15 and
@@ -77,8 +78,8 @@ second send happens now and then. The `last_command` text sensor shows the resul
 `stop: not sent, RC not heard yet`, or `open: replaced by stop` (a new command stops the one being sent). Failures
 are also logged as warnings.
 
-**After a restart** the buttons work once the component has heard one RC status packet (the RC sends one every
-minute), or with a fixed `system` once any Arexa packet came in. Until then they log a warning and send nothing.
+**After a restart** the buttons work once the component has heard two RC status packets (the RC sends one every
+minute), or with a fixed `system` once any packet of that system came in. Until then they log a warning and send nothing.
 
 **"err" on the RC display:** right after a command from Home Assistant, the RC's next exchange can show "err" for
 a second. The RC sleeps between its packets, so it does not see the new counter; it learns it from the station's

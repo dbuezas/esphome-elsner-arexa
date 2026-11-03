@@ -194,15 +194,6 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
       ESP_LOGD(TAG, "Packet from %s %02x: counter not clean, %.0f dBm, bad bytes: %s", from, sender, rssi, bads);
   }
 
-  // the counter (RC and station share it): v5 counts down, v6 = k - 2 v5, v7 changes rarely. Keep the newest one: after
-  // a command, the RC's next status has an older counter (the station ignores it, the RC shows ER and resyncs; a
-  // resync starts a new v7). A send with that older counter would be ignored too.
-  if (have(5, 7) && (this->v5_ < 0 || v[7] != this->v7_ || static_cast<int8_t>(v[5] - this->v5_) < 0)) {
-    this->v5_ = v[5];
-    this->v7_ = v[7];
-    this->k_ = v[6] + 2 * v[5];
-  }
-
   const bool rc_status = have(8, 20) && v[17] == 0x6a && v[18] == 0x30 && v[19] == 0x30 && v[20] == 0x30;
   if (rc_status) {
 #ifdef USE_TEXT_SENSOR
@@ -215,13 +206,36 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
       this->system_text_->publish_state(hex);
     }
 #endif
-    if (!this->learned_) {
+    // learn from two status packets in a row with the same system bytes (not from a neighbour's single packet or an
+    // undetected bit error)
+    if (!this->learned_ && this->candidate_seen_ && memcmp(this->candidate_, v + 8, 9) == 0) {
       this->use_system_(v + 8);
       ESP_LOGI(TAG, "Learned my RC: system %02x%02x, RC address %02x, station address %02x", v[8], v[9], v[10], v[15]);
+    } else if (!this->learned_) {
+      memcpy(this->candidate_, v + 8, 9);
+      this->candidate_seen_ = true;
     }
   }
   if (!this->learned_)
     return;
+
+  // only packets of my own system: the system ID is in bytes 8, 9 and again in 13, 14. A clean copy must match, and
+  // none may differ.
+  const bool id1 = ok[8] && ok[9], id2 = ok[13] && ok[14];
+  if ((!id1 && !id2) || (id1 && (v[8] != this->system_[0] || v[9] != this->system_[1])) ||
+      (id2 && (v[13] != this->system_[5] || v[14] != this->system_[6]))) {
+    ESP_LOGD(TAG, "Not my system (%s), dropped", id1 || id2 ? "other ID" : "ID not clean");
+    return;
+  }
+
+  // the counter (RC and station share it): v5 counts down, v6 = k - 2 v5, v7 changes rarely. Keep the newest one: after
+  // a command, the RC's next status has an older counter (the station ignores it, the RC shows ER and resyncs; a
+  // resync starts a new v7). A send with that older counter would be ignored too.
+  if (have(5, 7) && (this->v5_ < 0 || v[7] != this->v7_ || static_cast<int8_t>(v[5] - this->v5_) < 0)) {
+    this->v5_ = v[5];
+    this->v7_ = v[7];
+    this->k_ = v[6] + 2 * v[5];
+  }
 
   if (sender == this->rc_address_) {
 #ifdef USE_SENSOR
