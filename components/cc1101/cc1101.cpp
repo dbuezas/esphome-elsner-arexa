@@ -451,8 +451,9 @@ CC1101Error CC1101Component::transmit_packet(const std::vector<uint8_t> &packet)
     return CC1101Error::PARAMS;
   }
 
-  // Write packet
+  // Write packet. Flush the RX FIFO too: bytes of a packet that was being received would come before the next one.
   this->enter_idle_();
+  this->strobe_(Command::FRX);
   this->strobe_(Command::FTX);
   if (this->state_.LENGTH_CONFIG == static_cast<uint8_t>(LengthConfig::LENGTH_CONFIG_VARIABLE)) {
     this->write_(Register::FIFO, static_cast<uint8_t>(packet.size()));
