@@ -81,8 +81,8 @@ The value scales come from my own RC display readings, so they are a first fit:
 |---|---|---|
 | inside temperature | bytes 22, 23 (see Protocol) | the RC cooled in a freezer and warmed up: every display step from -1 to 13 °C, plus 20 to 25 °C; a thermometer next to the RC agrees within 0.1 °C |
 | outside temperature | bytes 17, 18 (see Protocol) | 30 readings, 7 to 11 °C; below 0 °C not seen yet |
-| brightness | (byte 24 - 2) × 135 lx | 2 readings, 0 and 6.5 klux |
-| wind | raw (0 = calm) | no scale yet |
+| brightness | (byte 24 - 2) × 135 lx | 5 readings from 0 to 6.5 klux (the RC shows whole klux) |
+| wind | (256 - byte 19) / 10 m/s | 3 readings: 0, 1 and 2 m/s (the RC shows whole m/s) |
 
 If you have more pairs (RC display, the `raw_*` sensors), please open an issue.
 
@@ -163,7 +163,7 @@ Measurements (Arexa; the Solexa's sensor has a different layout):
 |---|---|---|
 | RC status | 22, 23 | inside temperature (below) |
 | station | 17, 18 | outside temperature (below) |
-| station | 19 | wind (0 = calm) |
+| station | 19, 20 | wind in 0.1 m/s: `(256 - v19) & 0xff`, byte 20 = 2 × that |
 | station | 21 | rain alarm: `b2` dry, `ae` wet |
 | station | 24 | brightness, about (v - 2) × 135 lx |
 | station | 25 | mode: `b3` manual, `bf` automatic |

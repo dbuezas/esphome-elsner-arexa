@@ -243,7 +243,7 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
     if (outside_ok && this->raw_outside_ != nullptr)
       this->raw_outside_->publish_state(v[17]);
     if (clean[19] && clean[20] && static_cast<uint8_t>(2 * v[19] + v[20]) == 0 && this->wind_ != nullptr)
-      this->wind_->publish_state(v[19]);
+      this->wind_->publish_state(static_cast<uint8_t>(-v[19]) / 10.0f);  // a pair like the temperatures, base 0
     if (have(24, 24) && this->brightness_ != nullptr)
       this->brightness_->publish_state(v[24] <= 2 ? 0 : (v[24] - 2) * 135.0f);
     if (have(24, 24) && this->raw_brightness_ != nullptr)

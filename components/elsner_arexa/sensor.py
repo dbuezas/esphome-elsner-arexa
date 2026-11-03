@@ -5,11 +5,13 @@ from esphome.const import (
     DEVICE_CLASS_ILLUMINANCE,
     DEVICE_CLASS_SIGNAL_STRENGTH,
     DEVICE_CLASS_TEMPERATURE,
+    DEVICE_CLASS_WIND_SPEED,
     ENTITY_CATEGORY_DIAGNOSTIC,
     STATE_CLASS_MEASUREMENT,
     UNIT_CELSIUS,
     UNIT_DECIBEL_MILLIWATT,
     UNIT_LUX,
+    UNIT_METER_PER_SECOND,
 )
 
 from . import CONF_ELSNER_AREXA_ID, ElsnerArexa
@@ -46,8 +48,12 @@ TYPES = {
         device_class=DEVICE_CLASS_TEMPERATURE,
         state_class=STATE_CLASS_MEASUREMENT,
     ),
-    # raw value, 0 = calm (the scale to m/s is not known yet)
-    "wind": sensor.sensor_schema(accuracy_decimals=0, state_class=STATE_CLASS_MEASUREMENT, icon="mdi:weather-windy"),
+    "wind": sensor.sensor_schema(
+        unit_of_measurement=UNIT_METER_PER_SECOND,
+        accuracy_decimals=1,
+        device_class=DEVICE_CLASS_WIND_SPEED,
+        state_class=STATE_CLASS_MEASUREMENT,
+    ),
     "brightness": sensor.sensor_schema(
         unit_of_measurement=UNIT_LUX,
         accuracy_decimals=0,
