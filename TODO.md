@@ -16,26 +16,10 @@ release). Ordered by priority.
 
 - Done on 2026-11-03: #1 (confirmed sends, Last Command sensor), #3 (fixed by the non-blocking send: station
   answers to a send read -62 dBm like its minute answers), the per-packet log of #6, #2 (own system ID only, counter only from
-  own packets, learning from two matching RC status packets).
+  own packets), #4 (the whole frame with its CRC: a copy of the cc1101 driver reads
+  packets longer than the FIFO; the fields without a check, the counter and the learning need a matching CRC).
 
 ## High
-
-### 4. Receive the CRC: fields without a check of their own can be wrong silently
-A chip pair that is inverted (`10` read as `01`) is not detected, so a byte can be wrong while marked clean. The
-temperatures and wind have a check byte; `wind_alarm` (on for any byte 28 other than `27`, so one bad byte raises a
-wind alarm), `rain` (21), `brightness` (24), `auto_mode` (25) and `rain_sensor` (29) don't. The frame's CRC would
-catch all of it, but it never arrives: 38 frame bytes are 608 chips, the 64-byte FIFO holds 512 (frame bytes 1..32).
-- Option A: read the FIFO while the packet comes in (FIFO threshold, packet length 76) and keep the software
-  Manchester. Needs a change in (or a copy of) the cc1101 driver, which reads only at the end of a packet.
-- Option B: let the chip decode the Manchester (38 bytes fit). The bad-byte marks are lost, so a packet with one
-  broken chip is lost entirely (20-33% of the station's packets today): use the CRC-checked packet for the fields
-  without a check, and keep the software path for the rest?
-- Reading the whole frame also shows bytes 33..35 (`30` in all SDR recordings of status packets; not seen during
-  rain, wind or a moving window), and removes the remaining risk of a bit error in byte 7 resetting the counter.
-- Then publish `wind_alarm`, `rain`, `brightness`, `auto_mode` and `rain_sensor` only from packets whose CRC
-  matches.
-- Brightness has no check byte: `2 * v22 + v23` is not constant (0x25..0x38 over two hours), so 22, 23 is not a pair
-  like 17, 18, and byte 24 stands alone.
 
 ### 5. Outside temperature above 25.5 °C and below 0 °C are unknown
 The station has only a sign bit, so the decoded range is -25.6 to +25.5 °C. Above 25.5 °C the encoding is unknown;
@@ -73,9 +57,8 @@ The window closes; `down` probably comes from the Solexa (shade) or the RC's arr
 
 ## Low
 
-- `decode_`: if the driver ever hands over fewer than 64 bytes, the missing bytes are zeros marked clean. Mark bytes
-  past the end as bad (the driver gives 64 in fixed-length mode today, so this is only defensive).
 - The command list exists four times in an order that must match: `Command`, `COMMANDS`/`COMMAND_NAMES`,
   `TYPES` in button.py, `EVENT_TYPES` in event.py. Generate from one list, or at least add a comment in each place.
 - `validate_system`: check that bytes 8, 9 equal 13, 14, to catch a typo.
+- Offer the long-packet addition to the cc1101 driver upstream (ESPHome), so the copy can go.
 - Wind: one byte, so at most 25.5 m/s; what the station sends above that is unknown.

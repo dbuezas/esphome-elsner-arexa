@@ -18,17 +18,22 @@ its system ID and addresses. The RC keeps working as before.
 
 ## Setup
 
+The repo has a copy of ESPHome's `cc1101` driver (from 2026.10.1) with one addition: fixed-length packets longer
+than the 64-byte FIFO, read in parts while they arrive. An Arexa frame is 74 FIFO bytes (the CRC is in the last
+4), so the stock driver drops them. With `components: [elsner_arexa, cc1101]` the copy replaces the stock driver
+for every CC1101 on the node; without the addition, a packet length of 64 or less behaves as in the stock driver.
+
 ```yaml
 external_components:
   - source: github://dbuezas/esphome-elsner-arexa
-    components: [elsner_arexa]
+    components: [elsner_arexa, cc1101]  # cc1101: my copy of ESPHome's driver, see below
 
 cc1101:
   - id: radio_arexa
     cs_pin: D8
     gdo0_pin: D2
     packet_mode: true    # needed: elsner_arexa sets all other radio settings itself
-    packet_length: 64
+    packet_length: 64    # any value: elsner_arexa sets 74
 
 elsner_arexa:
   cc1101_id: radio_arexa
@@ -56,7 +61,7 @@ The full example with all sensors is in [examples/elsner-arexa.yaml](examples/el
 | `text_sensor` | `system`: the system bytes of the RC heard on the air; `station_raw`: the station's value bytes 17..32 (for working out new values); `last_command`: the result of the last command sent (see below) |
 
 **System (the pairing):** by default (`system: auto`) the component learns your RC's system ID and the RC's and
-the station's addresses from two RC status packets in a row with the same system bytes (about a minute). The `system` text sensor shows what arrives, as 18 hex
+the station's addresses from the first RC status packet whose CRC matches. The `system` text sensor shows what arrives, as 18 hex
 digits (bytes 8 to 16 of the RC's packets: the system ID, the RC's address, the station's address and the device
 types). After that, only packets with this system ID (bytes 8, 9 and 13, 14) count, so a neighbour's Arexa does
 not feed its weather into the sensors or move the counter. To skip the learning, put that value into the hub, for example `system: 1a2b3c4d5e1a2b6f70` (made up: use yours).
@@ -78,7 +83,7 @@ second send happens now and then. The `last_command` text sensor shows the resul
 `stop: not sent, RC not heard yet`, or `open: replaced by stop` (a new command stops the one being sent). Failures
 are also logged as warnings.
 
-**After a restart** the buttons work once the component has heard two RC status packets (the RC sends one every
+**After a restart** the buttons work once the component has heard an RC status packet (the RC sends one every
 minute), or with a fixed `system` once any packet of that system came in. Until then they log a warning and send nothing.
 
 **"err" on the RC display:** right after a command from Home Assistant, the RC's next exchange can show "err" for
@@ -105,7 +110,10 @@ frame and the CRC. The Solexa (the shade version) uses the same radio protocol: 
 recordings in rtl_433_tests, so the buttons may work there too, but its sensor bytes are different.
 
 Receiving: the chip hands over raw chips (its own Manchester decoder locks on the wrong chip phase about half the
-time with this short preamble), synced on the 16 chips of `ce`, and the ESP decodes them. The station answers the RC 14 ms after its packet, so the component sets the main loop interval to 2 ms (the
+time with this short preamble), synced on the 16 chips of `ce`, and the ESP decodes them. All 37 frame bytes after the sync word arrive (74 FIFO
+bytes, read while the packet comes in), so the CRC is checked. A packet with a broken chip pair is still used for
+the fields with a check of their own (the temperatures and the wind are pairs); everything else (rain, wind alarm,
+brightness, mode, rain sensor, the counter, the learning) comes only from packets whose CRC matches. The station answers the RC 14 ms after its packet, so the component sets the main loop interval to 2 ms (the
 default 16 ms misses most answers). The gain is frozen once the sync word is found: the station is often much
 weaker than the RC, and gain steps inside its packets broke them into bursts of wrong chips. Sending: the chip does
 the Manchester coding itself (an ESP8266 cannot time 10 µs chips in software while WiFi runs).
