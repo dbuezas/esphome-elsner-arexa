@@ -127,6 +127,9 @@ class CC1101Component final : public Component,
   void enter_idle_();
   bool enter_rx_();
   bool enter_tx_();
+  bool long_packet_() const;
+  void restart_rx_();
+  void update_fifo_threshold_();
 };
 
 // Action Wrappers

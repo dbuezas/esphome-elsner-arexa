@@ -188,30 +188,50 @@ void CC1101Component::loop() {
   bool overflow = this->state_.RXFIFO_OVERFLOW;
   if (overflow || rx_bytes == 0) {
     ESP_LOGW(TAG, "RX FIFO overflow, flushing");
-    this->enter_idle_();
-    this->strobe_(Command::FRX);
-    this->enter_rx_();
+    this->restart_rx_();
     return;
   }
 
   // Read packet
-  uint8_t payload_length, expected_rx;
-  if (this->state_.LENGTH_CONFIG == static_cast<uint8_t>(LengthConfig::LENGTH_CONFIG_VARIABLE)) {
-    this->read_(Register::FIFO, &payload_length, 1);
-    expected_rx = payload_length + 1;
-  } else {
+  uint8_t payload_length;
+  if (this->long_packet_()) {
+    // Longer than the FIFO: the RX threshold (16 bytes) wakes us while it arrives. Read what is there and wait for
+    // the rest, but never the last byte in the FIFO before the packet is complete (CC1101 errata).
+    for (uint8_t n = 0; n != rx_bytes;) {  // errata: NUM_RXBYTES can be wrong while bytes arrive: read it twice
+      n = rx_bytes;
+      this->read_(Register::RXBYTES);
+      rx_bytes = this->state_.NUM_RXBYTES;
+    }
     payload_length = this->state_.PKTLEN;
-    expected_rx = payload_length;
+    const size_t have = this->packet_.size(), left = payload_length - have;
+    if (rx_bytes > left) {
+      ESP_LOGW(TAG, "Invalid packet: rx_bytes %u, %u left", rx_bytes, static_cast<unsigned>(left));
+      this->restart_rx_();
+      return;
+    }
+    const uint8_t n = rx_bytes < left ? rx_bytes - 1 : rx_bytes;
+    this->packet_.resize(have + n);
+    if (n > 0)
+      this->read_(Register::FIFO, this->packet_.data() + have, n);
+    if (rx_bytes < left)
+      return;
+  } else {
+    uint8_t expected_rx;
+    if (this->state_.LENGTH_CONFIG == static_cast<uint8_t>(LengthConfig::LENGTH_CONFIG_VARIABLE)) {
+      this->read_(Register::FIFO, &payload_length, 1);
+      expected_rx = payload_length + 1;
+    } else {
+      payload_length = this->state_.PKTLEN;
+      expected_rx = payload_length;
+    }
+    if (payload_length == 0 || payload_length > 64 || rx_bytes != expected_rx) {
+      ESP_LOGW(TAG, "Invalid packet: rx_bytes %u, payload_length %u", rx_bytes, payload_length);
+      this->restart_rx_();
+      return;
+    }
+    this->packet_.resize(payload_length);
+    this->read_(Register::FIFO, this->packet_.data(), payload_length);
   }
-  if (payload_length == 0 || payload_length > 64 || rx_bytes != expected_rx) {
-    ESP_LOGW(TAG, "Invalid packet: rx_bytes %u, payload_length %u", rx_bytes, payload_length);
-    this->enter_idle_();
-    this->strobe_(Command::FRX);
-    this->enter_rx_();
-    return;
-  }
-  this->packet_.resize(payload_length);
-  this->read_(Register::FIFO, this->packet_.data(), payload_length);
 
   // Read status from registers (more reliable than FIFO status bytes due to timing issues)
   this->read_(Register::FREQEST);
@@ -226,9 +246,24 @@ void CC1101Component::loop() {
   }
 
   // Return to rx
+  this->restart_rx_();
+}
+
+bool CC1101Component::long_packet_() const {
+  return this->state_.LENGTH_CONFIG == static_cast<uint8_t>(LengthConfig::LENGTH_CONFIG_FIXED) &&
+         this->state_.PKTLEN > 64;
+}
+
+void CC1101Component::restart_rx_() {
   this->enter_idle_();
   this->strobe_(Command::FRX);
   this->enter_rx_();
+}
+
+// RX FIFO threshold: 16 bytes for packets longer than the FIFO (read while they arrive), else 64 (end of packet only)
+void CC1101Component::update_fifo_threshold_() {
+  if (this->state_.PKT_FORMAT == static_cast<uint8_t>(PacketFormat::PACKET_FORMAT_FIFO))
+    this->state_.FIFO_THR = this->long_packet_() ? 3 : 15;
 }
 
 void CC1101Component::dump_config() {
@@ -332,7 +367,10 @@ void CC1101Component::enter_idle_() {
   this->wait_for_state_(State::IDLE);
 }
 
-bool CC1101Component::enter_rx_() { return this->enter_calibrated_(State::RX, Command::RX); }
+bool CC1101Component::enter_rx_() {
+  this->packet_.clear();  // a packet read in parts starts again
+  return this->enter_calibrated_(State::RX, Command::RX);
+}
 
 bool CC1101Component::enter_tx_() { return this->enter_calibrated_(State::TX, Command::TX); }
 
@@ -747,8 +785,8 @@ void CC1101Component::set_packet_mode(bool value) {
   if (value) {
     // Configure GDO0 for FIFO status (asserts on RX FIFO threshold or end of packet)
     this->state_.GDO0_CFG = 0x01;
-    // Set max RX FIFO threshold to ensure we only trigger on end-of-packet
-    this->state_.FIFO_THR = 15;
+    // Max RX FIFO threshold to trigger only on end-of-packet (16 bytes for packets longer than the FIFO)
+    this->update_fifo_threshold_();
     // Don't append status bytes to FIFO - we read from registers instead
     this->state_.APPEND_STATUS = 0;
   } else {
@@ -777,9 +815,11 @@ void CC1101Component::set_packet_length(uint8_t value) {
     this->state_.LENGTH_CONFIG = static_cast<uint8_t>(LengthConfig::LENGTH_CONFIG_FIXED);
     this->state_.PKTLEN = value;
   }
+  this->update_fifo_threshold_();
   if (this->initialized_) {
     this->write_(Register::PKTCTRL0);
     this->write_(Register::PKTLEN);
+    this->write_(Register::FIFOTHR);
   }
 }
 
