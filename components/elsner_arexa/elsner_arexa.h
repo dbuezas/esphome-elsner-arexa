@@ -26,6 +26,7 @@
 
 namespace esphome::elsner_arexa {
 
+// the same order in COMMANDS and COMMAND_NAMES (elsner_arexa.cpp), TYPES (button.py) and EVENT_TYPES (event.py)
 enum Command : uint8_t { CMD_OPEN = 0, CMD_STOP, CMD_DOWN, CMD_AUTO, CMD_MANUAL };
 
 // Elsner Arexa window control (RC handset + weather station) on a CC1101 in packet mode.
@@ -123,6 +124,7 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
   uint8_t k_{0};
 
   int last_remote_{-1};
+  int last_remote_counter_{-1};  // v7 << 8 | v5 of the last RC command, -1 if not clean
   uint32_t last_remote_ms_{0};
 
 #ifdef USE_SENSOR

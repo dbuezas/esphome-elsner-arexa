@@ -23,6 +23,7 @@ static const uint8_t COMMANDS[5][3] = {
     {0x6a, 0x1f, 0x52},  // automatic mode
     {0x6a, 0x13, 0x6a},  // manual mode
 };
+// in the order of the Command enum
 static const char *const COMMAND_NAMES[5] = {"open", "stop", "down", "auto", "manual"};
 
 static uint16_t crc16(const uint8_t *data, size_t len) {
@@ -265,9 +266,13 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
       return;
     if (v[17] == 0x6a && v[18] == 0x30) {  // status: the RC's own temperature sensor
 #ifdef USE_SENSOR
-      if (have(22, 24) && this->inside_temperature_ != nullptr)
+      // byte 23 repeats the low byte (2 * low + sign), like byte 18 for the station: the check without a CRC
+      const bool pair = ((v[23] ^ static_cast<uint8_t>(2 * static_cast<uint8_t>(168 - v[22]))) & 0xfe) == 0;
+      if (crc_ok && !pair)
+        ESP_LOGW(TAG, "Inside temperature: bytes 22..24 %02x %02x %02x do not pass the pair check", v[22], v[23], v[24]);
+      if ((crc_ok || (have(22, 24) && pair)) && this->inside_temperature_ != nullptr)
         this->inside_temperature_->publish_state(temperature_with_high(v[22], v[24], 168));
-      if (have(22, 22) && this->raw_inside_ != nullptr)
+      if ((crc_ok || (have(22, 23) && pair)) && this->raw_inside_ != nullptr)
         this->raw_inside_->publish_state(v[22]);
 #endif
       return;
@@ -278,10 +283,14 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
         cmd = i;
     if (cmd < 0)
       return;  // for example the start-up packet after a battery change
-    // the RC repeats a command until the station answers: one event per press
-    if (cmd == this->last_remote_ && millis() - this->last_remote_ms_ < 3000)
+    // the RC repeats a command with the same counter until the station answers: one event per press. Without a clean
+    // counter, the same command within 3 s counts as a repeat.
+    const int counter = have(5, 7) ? v[7] << 8 | v[5] : -1;
+    if (cmd == this->last_remote_ &&
+        (counter >= 0 ? counter == this->last_remote_counter_ : millis() - this->last_remote_ms_ < 3000))
       return;
     this->last_remote_ = cmd;
+    this->last_remote_counter_ = counter;
     this->last_remote_ms_ = millis();
     ESP_LOGD(TAG, "RC button: %s", COMMAND_NAMES[cmd]);
 #ifdef USE_EVENT
@@ -318,9 +327,13 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
       this->station_freq_offset_->publish_state(freq_offset / 1000.0f);
     // byte 18 repeats the temperature (2 * low + sign): a check of its own, so it needs no in-step proof
     const bool outside_ok = clean[17] && clean[18] && ((v[18] ^ static_cast<uint8_t>(2 * static_cast<uint8_t>(154 - v[17]))) & 0xfe) == 0;
+    // the decoded range is -25.6 to +25.5 degrees; beyond it the encoding is unknown: report the bytes, publish nothing
+    if (crc_ok && !outside_ok)
+      ESP_LOGW(TAG, "Outside temperature: bytes 17, 18 %02x %02x do not pass the pair check (out of the known range?)",
+               v[17], v[18]);
     if (outside_ok && this->outside_temperature_ != nullptr)
       this->outside_temperature_->publish_state(temperature(v[17], v[18], 154));
-    if (outside_ok && this->raw_outside_ != nullptr)
+    if ((outside_ok || crc_ok) && this->raw_outside_ != nullptr)
       this->raw_outside_->publish_state(v[17]);
     if (clean[19] && clean[20] && static_cast<uint8_t>(2 * v[19] + v[20]) == 0 && this->wind_ != nullptr)
       this->wind_->publish_state(static_cast<uint8_t>(-v[19]) / 10.0f);  // a pair like the temperatures, base 0
