@@ -177,7 +177,8 @@ void CC1101Component::call_listeners_(const std::vector<uint8_t> &packet, float 
 
 void CC1101Component::loop() {
   // a long packet being read in parts: poll until it is complete (GDO0 stays high while a byte is left in the FIFO)
-  const bool reading = this->long_packet_() && !this->packet_.empty();
+  const bool reading = this->long_packet_() && !this->packet_.empty() &&
+                       this->state_.PKT_FORMAT == static_cast<uint8_t>(PacketFormat::PACKET_FORMAT_FIFO);
   if (reading && millis() - this->packet_start_ms_ > 20) {
     ESP_LOGW(TAG, "Long packet incomplete after 20 ms (%u bytes), flushing", static_cast<unsigned>(this->packet_.size()));
     this->restart_rx_();
@@ -303,6 +304,7 @@ void CC1101Component::dump_config() {
 void CC1101Component::begin_tx() {
   // Read the mode before the PKTCTRL0 write below overwrites it in state_
   const bool packet_mode = this->state_.PKT_FORMAT == static_cast<uint8_t>(PacketFormat::PACKET_FORMAT_FIFO);
+  this->packet_.clear();  // drop a long packet being read in parts: loop() must not go back to RX during the TX
   // Ensure Packet Format is 3 (Async Serial)
   this->write_(Register::PKTCTRL0, 0x32);
   ESP_LOGV(TAG, "Beginning TX sequence");
