@@ -304,8 +304,6 @@ def _validate_packet_mode(config):
             raise cv.Invalid("gdo0_pin is required when packet_mode is enabled")
         if CONF_PACKET_LENGTH not in config:
             raise cv.Invalid("packet_length is required when packet_mode is enabled")
-        if config[CONF_PACKET_LENGTH] > 64:
-            raise cv.Invalid("packet_length must be <= 64 (FIFO size)")
     return config
 
 

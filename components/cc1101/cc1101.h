@@ -129,6 +129,7 @@ class CC1101Component final : public Component,
   bool enter_rx_();
   bool enter_tx_();
   bool long_packet_() const;
+  uint32_t long_packet_timeout_ms_() const;
   void restart_rx_();
   void update_fifo_threshold_();
 };

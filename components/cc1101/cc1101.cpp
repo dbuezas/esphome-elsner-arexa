@@ -176,13 +176,14 @@ void CC1101Component::call_listeners_(const std::vector<uint8_t> &packet, float 
 }
 
 void CC1101Component::loop() {
-  // a long packet being read in parts: poll until it is complete (GDO0 stays high while a byte is left in the FIFO)
+  // A packet longer than the FIFO being read in parts: poll until it is complete (GDO0 stays high while a byte is
+  // left in the FIFO, so there is no new interrupt).
   const bool reading = this->long_packet_() && !this->packet_.empty() &&
                        this->state_.PKT_FORMAT == static_cast<uint8_t>(PacketFormat::PACKET_FORMAT_FIFO);
-  if (reading && millis() - this->packet_start_ms_ > 20) {
-    ESP_LOGW(TAG, "Long packet incomplete after 20 ms (%u bytes), flushing", static_cast<unsigned>(this->packet_.size()));
-    this->restart_rx_();
-    this->disable_loop();
+  if (reading && millis() - this->packet_start_ms_ > this->long_packet_timeout_ms_()) {
+    ESP_LOGW(TAG, "Long packet incomplete (%u of %u bytes), flushing", static_cast<unsigned>(this->packet_.size()),
+             this->state_.PKTLEN);
+    this->restart_rx_();  // ends the polling: packet_ is empty again
     return;
   }
   if (!reading)
@@ -201,23 +202,23 @@ void CC1101Component::loop() {
   if (overflow || rx_bytes == 0) {
     ESP_LOGW(TAG, "RX FIFO overflow, flushing");
     this->restart_rx_();
-    this->disable_loop();
     return;
   }
 
   // Read packet
   uint8_t payload_length;
   if (this->long_packet_()) {
-    // Longer than the FIFO: the RX threshold (16 bytes) wakes us while it arrives. Read what is there, then poll in
-    // loop() for the rest, but never read the last byte in the FIFO before the packet is complete (CC1101 errata).
-    for (uint8_t n = 0; n != rx_bytes;) {  // errata: NUM_RXBYTES can be wrong while bytes arrive: read it twice
+    // Longer than the FIFO: the RX FIFO threshold (16 bytes) wakes us while it arrives. Read what is there, then poll
+    // for the rest. Per the CC1101 errata (SWRZ020), NUM_RXBYTES can be wrong while bytes arrive (read it until two
+    // reads agree), and the last byte in the FIFO must not be read before the packet is complete.
+    for (uint8_t n = 0; n != rx_bytes;) {
       n = rx_bytes;
       this->read_(Register::RXBYTES);
       rx_bytes = this->state_.NUM_RXBYTES;
     }
     payload_length = this->state_.PKTLEN;
     const size_t have = this->packet_.size(), left = payload_length - have;
-    // more than left (seen once, after a TX during the packet): finish this packet, the rest is flushed below
+    // more bytes than the packet has left: finish it, the rest is flushed below
     const uint8_t n = rx_bytes < left ? rx_bytes - 1 : left;
     if (have == 0)
       this->packet_start_ms_ = millis();
@@ -260,12 +261,19 @@ void CC1101Component::loop() {
 
   // Return to rx
   this->restart_rx_();
-  this->disable_loop();
 }
 
 bool CC1101Component::long_packet_() const {
   return this->state_.LENGTH_CONFIG == static_cast<uint8_t>(LengthConfig::LENGTH_CONFIG_FIXED) &&
          this->state_.PKTLEN > 64;
+}
+
+// Twice the airtime of a long packet, plus 10 ms
+uint32_t CC1101Component::long_packet_timeout_ms_() const {
+  const float symbol_rate =
+      (((256.0f + this->state_.DRATE_M) * (1 << this->state_.DRATE_E)) / (1 << 28)) * XTAL_FREQUENCY;
+  const float bits = this->state_.PKTLEN * 8.0f * (this->state_.MANCHESTER_EN ? 2 : 1);
+  return static_cast<uint32_t>(2000.0f * bits / symbol_rate) + 10;
 }
 
 void CC1101Component::restart_rx_() {
