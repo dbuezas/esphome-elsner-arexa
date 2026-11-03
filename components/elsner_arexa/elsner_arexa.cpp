@@ -266,7 +266,7 @@ bool ElsnerArexa::send_command(Command cmd) {
   if (!this->send_command_(cmd))
     return false;
   if (cmd == CMD_AUTO || cmd == CMD_MANUAL)
-    this->set_timeout("mode_again", 400, [this, cmd]() { this->send_command_(cmd); });
+    this->set_timeout("mode_again", 200, [this, cmd]() { this->send_command_(cmd); });
   return true;
 }
 
