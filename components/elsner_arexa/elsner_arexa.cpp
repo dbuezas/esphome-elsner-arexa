@@ -93,6 +93,9 @@ void ElsnerArexa::start_listening() {
   r->set_num_preamble(2);
   r->set_foc_bs_cs_gate(false);  // the preamble is short: correct frequency and bit timing at once
   r->set_wait_time(cc1101::WaitTime::WAIT_TIME_8_SAMPLES);
+  // keep the gain from the sync word on: gain steps during the packet broke the station's weaker packets into
+  // bursts of wrong chips (about 10 per packet, now mostly 0 or 1)
+  r->set_freeze(cc1101::Freeze::FREEZE_ON_SYNC);
   r->set_crc_enable(false);
   r->set_whitening(false);
   r->set_packet_length(64);
