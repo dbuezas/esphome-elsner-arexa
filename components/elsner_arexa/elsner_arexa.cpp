@@ -189,6 +189,9 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
       bad[k] = false;
     first_bad = N;
   }
+  // decoded by the chip, a wrong CRC leaves nothing to trust: no byte is known to be bad
+  if (manchester && !crc_ok)
+    return;
   // the header after the sync byte and the seed byte must be clean
   if (first_bad <= 4)
     return;
