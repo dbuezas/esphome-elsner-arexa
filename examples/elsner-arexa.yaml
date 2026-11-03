@@ -82,7 +82,7 @@ button:
     down:
       name: Arexa Down
     auto:
-      name: Arexa Automatic
+      name: Arexa Auto
     manual:
       name: Arexa Manual
 
