@@ -84,6 +84,7 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
  protected:
   void decode_(const std::vector<uint8_t> &chips, float rssi, float freq_offset);
   bool send_command_(Command cmd);
+  void mode_again_(int left);
   void send_frame_(const std::vector<uint8_t> &frame);
 
   cc1101::CC1101Component *radio_{nullptr};
@@ -95,6 +96,7 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
     float freq_offset;
   };
   std::vector<Received> queue_;
+  int pending_mode_{-1};  // a mode sent but not yet in an answer: 1 automatic, 0 manual
 
   void use_system_(const uint8_t *system);
 

@@ -259,6 +259,8 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
 #endif
     if (have(25, 25) && (v[25] == 0xb3 || v[25] == 0xbf)) {
       const bool automatic = v[25] == 0xbf;  // 0xb3 manual, 0xbf automatic
+      if (this->pending_mode_ == automatic)
+        this->pending_mode_ = -1;
 #ifdef USE_BINARY_SENSOR
       if (this->auto_mode_ != nullptr)
         this->auto_mode_->publish_state(automatic);
@@ -271,14 +273,28 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
   }
 }
 
-// The station answers a command with its state from before it: a mode command is sent a second time, so that the
-// second answer already has the new mode (like pressing A/M twice on the RC) and auto_mode follows at once.
+// The station answers a command with its state from before it: a mode command is sent again (like pressing A/M
+// twice on the RC) until an answer has the new mode, so auto_mode follows at once. An answer can get lost.
 bool ElsnerArexa::send_command(Command cmd) {
   if (!this->send_command_(cmd))
     return false;
-  if (cmd == CMD_AUTO || cmd == CMD_MANUAL)
-    this->set_timeout("mode_again", 200, [this, cmd]() { this->send_command_(cmd); });
+  if (cmd == CMD_AUTO || cmd == CMD_MANUAL) {
+    this->pending_mode_ = cmd == CMD_AUTO;
+    this->mode_again_(3);
+  }
   return true;
+}
+
+void ElsnerArexa::mode_again_(int left) {
+  this->set_timeout("mode_again", left == 3 ? 200 : 300, [this, left]() {
+    if (this->pending_mode_ < 0)
+      return;
+    this->send_command_(this->pending_mode_ ? CMD_AUTO : CMD_MANUAL);
+    if (left > 1)
+      this->mode_again_(left - 1);
+    else
+      this->pending_mode_ = -1;
+  });
 }
 
 bool ElsnerArexa::send_command_(Command cmd) {
