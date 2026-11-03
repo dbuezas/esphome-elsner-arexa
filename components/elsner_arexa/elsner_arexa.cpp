@@ -168,6 +168,21 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
     sender = v[15] == this->rc_address_ ? this->station_address_ : this->rc_address_;
   else
     return;
+  {
+    char bads[3 * 33 + 1] = "none";
+    int n = 0;
+    for (int k = 5; k < 33; k++)
+      if (bad[k])
+        n += snprintf(bads + n, sizeof(bads) - n, n ? " %d" : "%d", k);
+    const char *from = !this->learned_                      ? "?"
+                       : sender == this->rc_address_      ? "RC"
+                       : sender == this->station_address_ ? "station"
+                                                           : "other";
+    if (have(5, 7))
+      ESP_LOGD(TAG, "Packet from %s %02x: counter %02x %02x, %.0f dBm, bad bytes: %s", from, sender, v[5], v[7], rssi, bads);
+    else
+      ESP_LOGD(TAG, "Packet from %s %02x: counter not clean, %.0f dBm, bad bytes: %s", from, sender, rssi, bads);
+  }
 
   // the counter (RC and station share it): v5 counts down, v6 = k - 2 v5, v7 changes rarely. Keep the newest one: after
   // a command, the RC's next status has an older counter (the station ignores it, the RC shows ER and resyncs; a
