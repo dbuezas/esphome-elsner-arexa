@@ -56,8 +56,8 @@ The full example with all sensors is in [examples/elsner-arexa.yaml](examples/el
 | `sensor` | `inside_temperature`, `outside_temperature`, `wind`, `brightness`, `rain_sensor`, `rc_rssi`, `station_rssi`, `rc_freq_offset`, `station_freq_offset`, and `raw_inside`, `raw_outside`, `raw_brightness` (for calibration) |
 | `binary_sensor` | `rain` (the station's rain alarm), `wind_alarm`, `auto_mode` (on in automatic mode) |
 | `switch` | `auto_mode` (on: automatic, off: manual; it shows the station's mode) |
-| `button` | `open`, `stop`, `down`, `auto`, `manual` |
-| `event` | `remote` (event types `open`, `stop`, `down`, `auto`, `manual`) |
+| `button` | `open`, `stop`, `down` (or `close`, the same), `auto`, `manual` |
+| `event` | `remote` (event types `open`, `stop`, `down`, `auto`, `manual`; one event per press: the RC's repeats have the same counter) |
 | `text_sensor` | `system`: the system bytes of the RC heard on the air; `station_raw`: the station's value bytes 17..32 (for working out new values); `last_command`: the result of the last command sent (see below) |
 
 **System (the pairing):** by default (`system: auto`) the component learns your RC's system ID and the RC's and

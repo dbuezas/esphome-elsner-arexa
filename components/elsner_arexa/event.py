@@ -14,7 +14,7 @@ EVENT_TYPES = ["open", "stop", "down", "auto", "manual"]
 CONFIG_SCHEMA = cv.Schema(
     {
         cv.GenerateID(CONF_ELSNER_AREXA_ID): cv.use_id(ElsnerArexa),
-        # a press on the real RC (its repeats within 3 s count as one press)
+        # a press on the real RC (its repeats, with the same counter, count as one press)
         cv.Optional(CONF_REMOTE): event.event_schema(device_class=DEVICE_CLASS_BUTTON, icon="mdi:remote"),
     }
 )

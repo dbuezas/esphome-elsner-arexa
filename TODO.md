@@ -18,18 +18,17 @@ release). Ordered by priority.
   answers to a send read -62 dBm like its minute answers), the per-packet log of #6, #2 (own system ID only, counter only from
   own packets), #4 (the whole frame with its CRC: a copy of the cc1101 driver reads
   packets longer than the FIFO; the fields without a check, the counter and the learning need a matching CRC).
+- Also done on 2026-11-03: #7 (inside temperature checked by byte 23), #9 (RC presses de-duplicated by counter),
+  #10 (`close` as another name for `down`), #5 in part (see below), the command order noted at each list.
 - Fixed on 2026-11-03: a send across `v5 = 00` kept the old `v7` and K, and the station ignored it (and every send
   after it until the RC resynced). Now `v7 + 2`, `K - 1`, as the RC does; tested with 140 Stop sends across a wrap.
 
 ## High
 
-### 5. Outside temperature above 25.5 °C and below 0 °C are unknown
-The station has only a sign bit, so the decoded range is -25.6 to +25.5 °C. Above 25.5 °C the encoding is unknown;
-if the station just wraps, a hot day would read as about -25 °C (bad for any automation using it). The sign is
-untested too.
-- If bytes 17 and 18 are clean but fail the pair check, log a warning with both bytes. Today the value just stops
-  updating silently, and Raw Outside stops too, because it is gated by the same check.
-- Optionally reject a jump of more than a few degrees from the last value until a second packet confirms it.
+### 5. Outside temperature above 25.5 °C is unknown
+The station has only a sign bit, so the decoded range is -25.6 to +25.5 °C (the sign is untested too). A CRC-ok
+packet whose bytes 17, 18 fail the pair check now logs a warning with both bytes and publishes no temperature;
+Raw Outside keeps updating from CRC-ok packets. To do: work out the encoding on a hot day from those warnings.
 
 ## Medium
 
@@ -43,24 +42,12 @@ untested too.
   later inside it. The open idea is syncing on frame byte 2 (comment in `start_listening()`): test on 30 Nov, not
   before.
 
-### 7. Inside temperature has no check
-Byte 23 holds `2 * low + sign`, like byte 18 for the station. Use it as a check, like `outside_ok`.
-
 ### 8. Station Raw lacks the system ID
 Add bytes 8..16 (and the counter 5..7), or a separate text sensor, so foreign or broken packets are visible.
 
-### 9. RC event de-duplication by time
-The same command within 3 s counts as one press, so two real presses within 3 s give one event. The RC repeats a
-command with the same counter until answered: de-duplicate on the counter instead.
-
-### 10. Rename `down` to `close`
-The window closes; `down` probably comes from the Solexa (shade) or the RC's arrow. Add `close` only as an alias:
-`down` keeps working everywhere (YAML key and event type), because existing HA automations use it.
-
 ## Low
 
-- The command list exists four times in an order that must match: `Command`, `COMMANDS`/`COMMAND_NAMES`,
-  `TYPES` in button.py, `EVENT_TYPES` in event.py. Generate from one list, or at least add a comment in each place.
+- The command list exists four times in an order that must match (now noted at each). Generate from one list?
 - `validate_system`: check that bytes 8, 9 equal 13, 14, to catch a typo.
 - Offer the long-packet addition to the cc1101 driver upstream (ESPHome), so the copy can go.
 - Wind: one byte, so at most 25.5 m/s; what the station sends above that is unknown.
