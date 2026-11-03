@@ -65,6 +65,8 @@ binary_sensor:
       name: Arexa Rain
     wind_alarm:
       name: Arexa Wind Alarm
+    auto_mode:
+      name: Arexa Auto Mode
 
 button:
   - platform: elsner_arexa

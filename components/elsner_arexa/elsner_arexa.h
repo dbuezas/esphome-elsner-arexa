@@ -66,6 +66,7 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
 #ifdef USE_BINARY_SENSOR
   void set_rain_binary_sensor(binary_sensor::BinarySensor *s) { this->rain_ = s; }
   void set_wind_alarm_binary_sensor(binary_sensor::BinarySensor *s) { this->wind_alarm_ = s; }
+  void set_auto_mode_binary_sensor(binary_sensor::BinarySensor *s) { this->auto_mode_ = s; }
 #endif
 #ifdef USE_EVENT
   void set_remote_event(event::Event *e) { this->remote_ = e; }
@@ -121,6 +122,7 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
 #ifdef USE_BINARY_SENSOR
   binary_sensor::BinarySensor *rain_{nullptr};
   binary_sensor::BinarySensor *wind_alarm_{nullptr};
+  binary_sensor::BinarySensor *auto_mode_{nullptr};
 #endif
 #ifdef USE_EVENT
   event::Event *remote_{nullptr};

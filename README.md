@@ -8,7 +8,8 @@ An ESPHome component for the **Elsner Arexa** window control (Arexa 230 V: a bat
 station that drives the window motor). With a CC1101 868 MHz module it gives you in Home Assistant:
 
 - **Buttons:** open, stop, down, automatic mode, manual mode. They work like the RC's own buttons.
-- **Sensors:** inside temperature (from the RC), outside temperature, wind, brightness, rain alarm, rain sensor.
+- **Sensors:** inside temperature (from the RC), outside temperature, wind, brightness, rain alarm, rain sensor,
+  automatic or manual mode.
 - **An event** for every press on the real RC.
 
 Nothing has to be opened or re-paired: the component listens to your RC for up to a minute and then speaks with
@@ -47,7 +48,7 @@ The full example with all sensors is in [examples/elsner-arexa.yaml](examples/el
 | Platform | Keys |
 |---|---|
 | `sensor` | `inside_temperature`, `outside_temperature`, `wind`, `brightness`, `rain_sensor`, `rc_rssi`, `station_rssi`, `rc_freq_offset`, `station_freq_offset`, and `raw_inside`, `raw_outside`, `raw_brightness` (for calibration) |
-| `binary_sensor` | `rain` (the station's rain alarm), `wind_alarm` |
+| `binary_sensor` | `rain` (the station's rain alarm), `wind_alarm`, `auto_mode` (on in automatic mode) |
 | `button` | `open`, `stop`, `down`, `auto`, `manual` |
 | `event` | `remote` (event types `open`, `stop`, `down`, `auto`, `manual`) |
 | `text_sensor` | `system`: the system bytes of the RC heard on the air |
@@ -164,6 +165,7 @@ Measurements (Arexa; the Solexa's sensor has a different layout):
 | station | 19 | wind (0 = calm) |
 | station | 21 | rain alarm: `b2` dry, `ae` wet |
 | station | 24 | brightness, about (v - 2) × 135 lx |
+| station | 25 | mode: `b3` manual, `bf` automatic |
 | station | 28 | wind flag: `27` calm |
 | station | 29 | rain sensor reading: `a6` dry, lower = wetter |
 | station | 31..35 | `30` in a status packet (`00`/`ff` in the start-up packets after a battery change) |

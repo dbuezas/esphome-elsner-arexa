@@ -251,6 +251,8 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
       this->rain_->publish_state(v[21] < 0xb0);  // 0xb2 dry, 0xae while the rain alarm holds
     if (have(28, 28) && this->wind_alarm_ != nullptr)
       this->wind_alarm_->publish_state(v[28] != 0x27);  // 0x27 calm
+    if (have(25, 25) && (v[25] == 0xb3 || v[25] == 0xbf) && this->auto_mode_ != nullptr)
+      this->auto_mode_->publish_state(v[25] == 0xbf);  // 0xb3 manual, 0xbf automatic
 #endif
   }
 }

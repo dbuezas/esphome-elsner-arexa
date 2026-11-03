@@ -11,6 +11,8 @@ TYPES = {
     # the station's rain alarm (it holds ~25 minutes after the sensor is dry)
     "rain": binary_sensor.binary_sensor_schema(device_class=DEVICE_CLASS_MOISTURE),
     "wind_alarm": binary_sensor.binary_sensor_schema(device_class=DEVICE_CLASS_PROBLEM, icon="mdi:weather-windy"),
+    # on in automatic mode (the station tells the RC in its minute answer; the RC shows it from then on)
+    "auto_mode": binary_sensor.binary_sensor_schema(icon="mdi:refresh-auto"),
 }
 
 CONFIG_SCHEMA = cv.Schema(
