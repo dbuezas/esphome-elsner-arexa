@@ -95,3 +95,5 @@ text_sensor:
   - platform: elsner_arexa
     system:
       name: Arexa System
+    station_raw:
+      name: Arexa Station Raw

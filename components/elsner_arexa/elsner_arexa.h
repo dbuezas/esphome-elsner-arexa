@@ -79,6 +79,7 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
 #endif
 #ifdef USE_TEXT_SENSOR
   void set_system_text_sensor(text_sensor::TextSensor *s) { this->system_text_ = s; }
+  void set_station_raw_text_sensor(text_sensor::TextSensor *s) { this->station_raw_ = s; }
 #endif
 
  protected:
@@ -141,6 +142,7 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
 #endif
 #ifdef USE_TEXT_SENSOR
   text_sensor::TextSensor *system_text_{nullptr};
+  text_sensor::TextSensor *station_raw_{nullptr};
   std::string system_seen_;
 #endif
 };

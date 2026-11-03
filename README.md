@@ -53,7 +53,7 @@ The full example with all sensors is in [examples/elsner-arexa.yaml](examples/el
 | `switch` | `auto_mode` (on: automatic, off: manual; it shows the station's mode) |
 | `button` | `open`, `stop`, `down`, `auto`, `manual` |
 | `event` | `remote` (event types `open`, `stop`, `down`, `auto`, `manual`) |
-| `text_sensor` | `system`: the system bytes of the RC heard on the air |
+| `text_sensor` | `system`: the system bytes of the RC heard on the air; `station_raw`: the station's value bytes 17..32 (for working out new values) |
 
 **System (the pairing):** by default (`system: auto`) the component learns your RC's system ID and the RC's and
 the station's addresses from the RC's first status packet. The `system` text sensor shows what arrives, as 18 hex

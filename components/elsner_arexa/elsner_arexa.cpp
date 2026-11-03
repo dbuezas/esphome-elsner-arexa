@@ -235,6 +235,15 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
   } else if (sender == this->station_address_ && (!ok[31] || v[31] == 0x30) && (!ok[32] || v[32] == 0x30)) {
     // the station's status (the start-up packets after a battery change have 00/ff in bytes 31..35). The station
     // is often weaker than the RC and its packets are often damaged: use each field whose bytes are clean.
+#ifdef USE_TEXT_SENSOR
+    if (this->station_raw_ != nullptr) {
+      char hex[3 * 16 + 1];
+      for (int k = 17; k < 33; k++)
+        snprintf(hex + 3 * (k - 17), 4, ok[k] ? "%02x " : ".. ", v[k]);
+      hex[3 * 16 - 1] = 0;
+      this->station_raw_->publish_state(hex);
+    }
+#endif
 #ifdef USE_SENSOR
     if (this->station_rssi_ != nullptr)
       this->station_rssi_->publish_state(rssi);
