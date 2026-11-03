@@ -88,6 +88,10 @@ void ElsnerArexa::start_listening() {
   r->set_filter_bandwidth(270e3f);
   r->set_manchester(false);
   r->set_sync_mode(cc1101::SyncMode::SYNC_MODE_16_16);
+  // To test: about 1 station answer in 8 is lost because its start (preamble, ce, ad) arrives broken and the radio
+  // locks on later inside the packet. Syncing on frame byte 2 instead (93: chips 96 5A) gives the receiver more time
+  // to settle; the chips would then start at byte 3 and the header check would be c[3] == ba only. A short test
+  // decoded fine with fewer noise syncs, but was too short to show fewer misses.
   r->set_sync1(0xA5);
   r->set_sync0(0xA9);
   r->set_num_preamble(2);
