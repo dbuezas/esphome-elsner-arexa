@@ -208,7 +208,8 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
                        : sender == this->station_address_ ? "station"
                                                            : "other";
     if (have(5, 7))
-      ESP_LOGD(TAG, "Packet from %s %02x: counter %02x %02x, %.0f dBm, CRC %s, bad bytes: %s", from, sender, v[5], v[7], rssi,
+      ESP_LOGD(TAG, "Packet from %s %02x: counter %02x %02x k %02x, %.0f dBm, CRC %s, bad bytes: %s", from, sender, v[5], v[7],
+               static_cast<uint8_t>(v[6] + 2 * v[5]), rssi,
                crc_ok ? "ok" : "wrong", bads);
     else
       ESP_LOGD(TAG, "Packet from %s %02x: counter not clean, %.0f dBm, CRC wrong, bad bytes: %s", from, sender, rssi, bads);
@@ -388,7 +389,12 @@ void ElsnerArexa::new_send_() {
     value[8 + i] = this->system_[i];
   for (int i = 0; i < 3; i++)
     value[17 + i] = COMMANDS[this->cmd_][i];
+  // a new block starts at v5 = 00: v7 + 2 and k - 1 (the RC: 01 17 k 70, then 00 19 k 6f, ff 19 k 6f)
   const uint8_t v5 = this->v5_ - 2;
+  if (this->v5_ == 1 || this->v5_ == 2) {
+    this->v7_ += 2;
+    this->k_ -= 1;
+  }
   this->v5_ = v5;
   this->sent_v5_ = v5;
   value[5] = v5;
@@ -405,7 +411,8 @@ void ElsnerArexa::new_send_() {
   this->sends_++;
   this->copies_ = 0;
   this->send_ms_ = millis();
-  ESP_LOGD(TAG, "Sending %s with counter %02x (send %d)", COMMAND_NAMES[this->cmd_], v5, this->sends_);
+  ESP_LOGD(TAG, "Sending %s with counter %02x %02x k %02x (send %d)", COMMAND_NAMES[this->cmd_], v5, this->v7_, this->k_,
+           this->sends_);
   this->transmit_();
 }
 

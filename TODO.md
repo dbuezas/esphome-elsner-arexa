@@ -18,6 +18,8 @@ release). Ordered by priority.
   answers to a send read -62 dBm like its minute answers), the per-packet log of #6, #2 (own system ID only, counter only from
   own packets), #4 (the whole frame with its CRC: a copy of the cc1101 driver reads
   packets longer than the FIFO; the fields without a check, the counter and the learning need a matching CRC).
+- Fixed on 2026-11-03: a send across `v5 = 00` kept the old `v7` and K, and the station ignored it (and every send
+  after it until the RC resynced). Now `v7 + 2`, `K - 1`, as the RC does; tested with 140 Stop sends across a wrap.
 
 ## High
 

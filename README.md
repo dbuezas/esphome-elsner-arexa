@@ -158,7 +158,7 @@ So `value[k] = c[k] - 2 * c[k-1] - (parity(seed & mask[k]) ^ inv[k])`. To build 
 
 | Bytes | Content |
 |---|---|
-| 5..7 | packet counter: `v5` counts down (the RC and the station share it), `v6 = K - 2 * v5`, `v7` changes rarely (K belongs to it). The station only takes a command whose counter is newer than the last one. |
+| 5..7 | packet counter: `v5` counts down (the RC and the station share it), `v6 = K - 2 * v5`, `v7` changes rarely (K belongs to it). When `v5` reaches `00`, a new block starts: `v7 + 2` and `K - 1` (seen: `01 17` K `70`, then `00 19` K `6f`, `ff 19` K `6f`). After an "err" the RC resyncs with a new `v7` and K. The station only takes a command whose counter is newer than the last one. |
 | 8, 9 | system ID (set by the teach-in), repeated in 13, 14 |
 | 10 | sender address |
 | 15 | receiver address |
