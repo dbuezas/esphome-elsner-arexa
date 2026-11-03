@@ -9,19 +9,19 @@ MULTI_CONF = True
 
 CONF_CC1101_ID = "cc1101_id"
 CONF_ELSNER_AREXA_ID = "elsner_arexa_id"
-CONF_SYSTEM = "system"
+CONF_PAIRING = "pairing"
 
 elsner_arexa_ns = cg.esphome_ns.namespace("elsner_arexa")
 ElsnerArexa = elsner_arexa_ns.class_("ElsnerArexa", cg.Component)
 
 
-def validate_system(value):
-    """auto, or the 18 hex digits the system text sensor shows (bytes 8..16 of the RC's packets)"""
+def validate_pairing(value):
+    """auto, or the 18 hex digits the pairing text sensor shows (bytes 8..16 of the RC's packets)"""
     value = cv.string(value).strip().lower()
     if value == "auto":
         return value
     if len(value) != 18 or any(ch not in "0123456789abcdef" for ch in value):
-        raise cv.Invalid("system must be 'auto' or 18 hex digits, like the system text sensor shows")
+        raise cv.Invalid("pairing must be 'auto' or 18 hex digits, like the pairing text sensor shows")
     return value
 
 
@@ -35,9 +35,9 @@ CONFIG_SCHEMA = cv.Schema(
             cv.frequency, cv.float_range(min=867.9e6, max=868.5e6)
         ),
         cv.Optional(CONF_OUTPUT_POWER, default=11): cv.float_range(min=-30.0, max=11.0),
-        # auto: learn it from the RC's packets. Or fix it (the value of the system text sensor), then the buttons
+        # auto: learn it from the RC's packets. Or fix it (the value of the pairing text sensor), then the buttons
         # work as soon as any Arexa packet brought the counter.
-        cv.Optional(CONF_SYSTEM, default="auto"): validate_system,
+        cv.Optional(CONF_PAIRING, default="auto"): validate_pairing,
     }
 ).extend(cv.COMPONENT_SCHEMA)
 
@@ -49,6 +49,6 @@ async def to_code(config):
     cg.add(var.set_radio(radio))
     cg.add(var.set_frequency(config[CONF_FREQUENCY]))
     cg.add(var.set_output_power(config[CONF_OUTPUT_POWER]))
-    if config[CONF_SYSTEM] != "auto":
-        system = [int(config[CONF_SYSTEM][i : i + 2], 16) for i in range(0, 18, 2)]
-        cg.add(var.set_fixed_system(system))
+    if config[CONF_PAIRING] != "auto":
+        pairing = [int(config[CONF_PAIRING][i : i + 2], 16) for i in range(0, 18, 2)]
+        cg.add(var.set_fixed_pairing(pairing))

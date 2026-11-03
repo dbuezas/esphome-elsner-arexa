@@ -7,15 +7,15 @@ from . import CONF_ELSNER_AREXA_ID, ElsnerArexa
 
 DEPENDENCIES = ["elsner_arexa"]
 
-CONF_SYSTEM = "system"
+CONF_PAIRING = "pairing"
 CONF_STATION_RAW = "station_raw"
 CONF_LAST_COMMAND = "last_command"
 
 CONFIG_SCHEMA = cv.Schema(
     {
         cv.GenerateID(CONF_ELSNER_AREXA_ID): cv.use_id(ElsnerArexa),
-        # the system bytes of the RC heard on the air (18 hex digits); usable as `system:` in the hub
-        cv.Optional(CONF_SYSTEM): text_sensor.text_sensor_schema(
+        # the pairing of the RC heard on the air (18 hex digits); usable as `pairing:` in the hub
+        cv.Optional(CONF_PAIRING): text_sensor.text_sensor_schema(
             icon="mdi:identifier", entity_category=ENTITY_CATEGORY_DIAGNOSTIC
         ),
         # the station's value bytes 17..32 in hex, ".." for a byte that did not arrive clean (to work out new values)
@@ -31,9 +31,9 @@ CONFIG_SCHEMA = cv.Schema(
 
 async def to_code(config):
     hub = await cg.get_variable(config[CONF_ELSNER_AREXA_ID])
-    if CONF_SYSTEM in config:
-        t = await text_sensor.new_text_sensor(config[CONF_SYSTEM])
-        cg.add(hub.set_system_text_sensor(t))
+    if CONF_PAIRING in config:
+        t = await text_sensor.new_text_sensor(config[CONF_PAIRING])
+        cg.add(hub.set_pairing_text_sensor(t))
     if CONF_STATION_RAW in config:
         t = await text_sensor.new_text_sensor(config[CONF_STATION_RAW])
         cg.add(hub.set_station_raw_text_sensor(t))

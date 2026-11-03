@@ -50,20 +50,20 @@ static float temperature_with_high(uint8_t a, uint8_t high_byte, uint8_t base) {
   return (high * 256 + low) / 10.0f;
 }
 
-// system[0..8] = the values of bytes 8..16 of the RC's packets: 8, 9 the system ID (repeated in 13, 14), 10 the RC's
+// the pairing: pairing[0..8] = the values of bytes 8..16 of the RC's packets: 8, 9 the system ID (repeated in 13, 14), 10 the RC's
 // address, 15 the station's address (the RC's packets go to the station), 11, 12, 16 the device type
-void ElsnerArexa::use_system_(const uint8_t *system) {
+void ElsnerArexa::use_pairing_(const uint8_t *pairing) {
   for (int i = 0; i < 9; i++)
-    this->system_[i] = system[i];
-  this->rc_address_ = system[2];
-  this->station_address_ = system[7];
+    this->pairing_[i] = pairing[i];
+  this->rc_address_ = pairing[2];
+  this->station_address_ = pairing[7];
   this->learned_ = true;
 }
 
-void ElsnerArexa::set_fixed_system(const std::vector<uint8_t> &system) {
-  if (system.size() != 9)
+void ElsnerArexa::set_fixed_pairing(const std::vector<uint8_t> &pairing) {
+  if (pairing.size() != 9)
     return;
-  this->use_system_(system.data());
+  this->use_pairing_(pairing.data());
   this->fixed_ = true;
 }
 
@@ -219,29 +219,29 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
   const bool rc_status = have(8, 20) && v[17] == 0x6a && v[18] == 0x30 && v[19] == 0x30 && v[20] == 0x30;
   if (rc_status) {
 #ifdef USE_TEXT_SENSOR
-    // the system bytes of the RC heard on the air (also with a fixed system: to see what arrives)
+    // the pairing of the RC heard on the air (also with a fixed pairing: to see what arrives)
     char hex[19];
     for (int i = 0; i < 9; i++)
       snprintf(hex + 2 * i, 3, "%02x", v[8 + i]);
-    if (this->system_text_ != nullptr && this->system_seen_ != hex) {
-      this->system_seen_ = hex;
-      this->system_text_->publish_state(hex);
+    if (this->pairing_text_ != nullptr && this->pairing_seen_ != hex) {
+      this->pairing_seen_ = hex;
+      this->pairing_text_->publish_state(hex);
     }
 #endif
     if (!this->learned_ && crc_ok) {
-      this->use_system_(v + 8);
-      ESP_LOGI(TAG, "Learned my RC: system %02x%02x, RC address %02x, station address %02x", v[8], v[9], v[10], v[15]);
+      this->use_pairing_(v + 8);
+      ESP_LOGI(TAG, "Learned my RC: system ID %02x%02x, RC address %02x, station address %02x", v[8], v[9], v[10], v[15]);
     }
   }
   if (!this->learned_)
     return;
 
-  // only packets of my own system: the system ID is in bytes 8, 9 and again in 13, 14. A clean copy must match, and
+  // only packets of my own pairing: the system ID is in bytes 8, 9 and again in 13, 14. A clean copy must match, and
   // none may differ.
   const bool id1 = ok[8] && ok[9], id2 = ok[13] && ok[14];
-  if ((!id1 && !id2) || (id1 && (v[8] != this->system_[0] || v[9] != this->system_[1])) ||
-      (id2 && (v[13] != this->system_[5] || v[14] != this->system_[6]))) {
-    ESP_LOGD(TAG, "Not my system (%s), dropped", id1 || id2 ? "other ID" : "ID not clean");
+  if ((!id1 && !id2) || (id1 && (v[8] != this->pairing_[0] || v[9] != this->pairing_[1])) ||
+      (id2 && (v[13] != this->pairing_[5] || v[14] != this->pairing_[6]))) {
+    ESP_LOGD(TAG, "Not my system ID (%s), dropped", id1 || id2 ? "another one" : "not clean");
     return;
   }
 
@@ -399,7 +399,7 @@ void ElsnerArexa::new_send_() {
   for (int k = 17; k < 36; k++)
     value[k] = 0x30;
   for (int i = 0; i < 9; i++)
-    value[8 + i] = this->system_[i];
+    value[8 + i] = this->pairing_[i];
   for (int i = 0; i < 3; i++)
     value[17 + i] = COMMANDS[this->cmd_][i];
   // a new block starts at v5 = 00: v7 + 2 and k - 1 (the RC: 01 17 k 70, then 00 19 k 6f, ff 19 k 6f)
@@ -451,7 +451,8 @@ void ElsnerArexa::dump_config() {
   ESP_LOGCONFIG(TAG, "Elsner Arexa:");
   ESP_LOGCONFIG(TAG, "  Frequency: %.3f MHz", this->frequency_ / 1e6f);
   if (this->learned_)
-    ESP_LOGCONFIG(TAG, "  System %02x%02x, RC address %02x, station address %02x (%s)", this->system_[0], this->system_[1],
+    ESP_LOGCONFIG(TAG, "  Pairing: system ID %02x%02x, RC address %02x, station address %02x (%s)", this->pairing_[0],
+                  this->pairing_[1],
                   this->rc_address_, this->station_address_, this->fixed_ ? "fixed" : "learned");
   else
     ESP_LOGCONFIG(TAG, "  RC not heard yet (it sends a status packet every minute)");

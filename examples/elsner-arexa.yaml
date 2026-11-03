@@ -36,7 +36,7 @@ cc1101:
 elsner_arexa:
   cc1101_id: radio_arexa
   # frequency: 868.19MHz  # 868.19 MHz + your module's error (cheap modules: +-40 kHz)
-  # system: auto          # or the 18 hex digits of the "Arexa System" text sensor, to skip the learning
+  # pairing: auto         # or the 18 hex digits of the "Arexa Pairing" text sensor, to skip the learning
 
 sensor:
   - platform: elsner_arexa
@@ -93,8 +93,8 @@ event:
 
 text_sensor:
   - platform: elsner_arexa
-    system:
-      name: Arexa System
+    pairing:
+      name: Arexa Pairing
     station_raw:
       name: Arexa Station Raw
     last_command:

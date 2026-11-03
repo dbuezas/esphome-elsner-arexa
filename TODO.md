@@ -48,6 +48,6 @@ Add bytes 8..16 (and the counter 5..7), or a separate text sensor, so foreign or
 ## Low
 
 - The command list exists four times in an order that must match (now noted at each). Generate from one list?
-- `validate_system`: check that bytes 8, 9 equal 13, 14, to catch a typo.
+- `validate_pairing`: check that bytes 8, 9 equal 13, 14, to catch a typo.
 - Offer the long-packet addition to the cc1101 driver upstream (ESPHome), so the copy can go.
 - Wind: one byte, so at most 25.5 m/s; what the station sends above that is unknown.

@@ -30,15 +30,15 @@ namespace esphome::elsner_arexa {
 enum Command : uint8_t { CMD_OPEN = 0, CMD_STOP, CMD_CLOSE, CMD_AUTO, CMD_MANUAL };
 
 // Elsner Arexa window control (RC handset + weather station) on a CC1101 in packet mode.
-// Listens to the RC and the station, learns the system ID, both addresses and the packet counter from the RC's
+// Listens to the RC and the station, learns the pairing (system ID, both addresses) and the packet counter from the RC's
 // own packets, and sends RC commands built from them. See the README for the radio format.
 class ElsnerArexa : public Component, public cc1101::CC1101Listener {
  public:
   void set_radio(cc1101::CC1101Component *radio) { this->radio_ = radio; }
   void set_frequency(float frequency) { this->frequency_ = frequency; }
   void set_output_power(float power) { this->output_power_ = power; }
-  // the 9 system bytes (8..16) to use instead of learning them from the RC; see the README
-  void set_fixed_system(const std::vector<uint8_t> &system);
+  // the pairing (bytes 8..16) to use instead of learning it from the RC; see the README
+  void set_fixed_pairing(const std::vector<uint8_t> &pairing);
 
   void setup() override;
   void loop() override;
@@ -80,7 +80,7 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
   void set_remote_event(event::Event *e) { this->remote_ = e; }
 #endif
 #ifdef USE_TEXT_SENSOR
-  void set_system_text_sensor(text_sensor::TextSensor *s) { this->system_text_ = s; }
+  void set_pairing_text_sensor(text_sensor::TextSensor *s) { this->pairing_text_ = s; }
   void set_station_raw_text_sensor(text_sensor::TextSensor *s) { this->station_raw_ = s; }
   void set_last_command_text_sensor(text_sensor::TextSensor *s) { this->last_command_ = s; }
 #endif
@@ -110,12 +110,12 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
   bool answered_{false};  // the station answered some send of this command (for a mode command: with the old mode)
   std::vector<uint8_t> frame_;
 
-  void use_system_(const uint8_t *system);
+  void use_pairing_(const uint8_t *pairing);
 
   // learned from the RC's status packets, or fixed in the configuration
   bool learned_{false};
   bool fixed_{false};
-  uint8_t system_[9]{};  // values of bytes 8..16 of the RC's packets: system ID, addresses, device type
+  uint8_t pairing_[9]{};  // values of bytes 8..16 of the RC's packets: system ID, addresses, device type
   uint8_t rc_address_{0};
   uint8_t station_address_{0};
   // the packet counter of the last packet heard (RC or station)
@@ -153,10 +153,10 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
   event::Event *remote_{nullptr};
 #endif
 #ifdef USE_TEXT_SENSOR
-  text_sensor::TextSensor *system_text_{nullptr};
+  text_sensor::TextSensor *pairing_text_{nullptr};
   text_sensor::TextSensor *station_raw_{nullptr};
   text_sensor::TextSensor *last_command_{nullptr};
-  std::string system_seen_;
+  std::string pairing_seen_;
 #endif
 };
 
