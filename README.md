@@ -83,6 +83,9 @@ second send happens now and then. The `last_command` text sensor shows the resul
 `stop: not sent, RC not heard yet`, or `open: replaced by stop` (a new command stops the one being sent). Failures
 are also logged as warnings.
 
+**Open, Stop and Down end automatic mode**, like on the RC: the station switches to manual (seen with Stop). Send
+Auto afterwards if the station should go on reacting to rain and wind by itself.
+
 **After a restart** the buttons work once the component has heard an RC status packet (the RC sends one every
 minute), or with a fixed `system` once any packet of that system came in. Until then they log a warning and send nothing.
 
