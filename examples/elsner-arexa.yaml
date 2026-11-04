@@ -18,7 +18,7 @@ ota:
 
 external_components:
   - source: github://dbuezas/esphome-elsner-arexa
-    components: [elsner_arexa, cc1101]  # cc1101: my copy of the driver, reads packets longer than the FIFO
+    components: [elsner_arexa]
 
 spi:
   clk_pin: D5

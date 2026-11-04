@@ -18,22 +18,19 @@ its system ID and addresses. The RC keeps working as before.
 
 ## Setup
 
-The repo has a copy of ESPHome's `cc1101` driver (from 2026.10.1) with one addition: fixed-length packets longer
-than the 64-byte FIFO, read in parts while they arrive. An Arexa frame is 74 FIFO bytes (the CRC is in the last
-4), so the stock driver drops them. With `components: [elsner_arexa, cc1101]` the copy replaces the stock driver
-for every CC1101 on the node; without the addition, a packet length of 64 or less behaves as in the stock driver.
+It needs ESPHome's `cc1101` component (ESPHome 2026.10 or newer).
 
 ```yaml
 external_components:
   - source: github://dbuezas/esphome-elsner-arexa
-    components: [elsner_arexa, cc1101]  # cc1101: my copy of ESPHome's driver, see below
+    components: [elsner_arexa]
 
 cc1101:
   - id: radio_arexa
     cs_pin: D8
     gdo0_pin: D2
     packet_mode: true    # needed: elsner_arexa sets all other radio settings itself
-    packet_length: 64    # any value: elsner_arexa sets 74
+    packet_length: 64    # any value: elsner_arexa sets its own
 
 elsner_arexa:
   cc1101_id: radio_arexa
@@ -61,7 +58,7 @@ The full example with all sensors is in [examples/elsner-arexa.yaml](examples/el
 | `text_sensor` | `pairing`: the pairing of the RC heard on the air; `station_raw`: the station's value bytes 17..35 (for working out new values); `last_command`: the result of the last command sent (see below) |
 
 **Pairing:** by default (`pairing: auto`) the component learns your RC's system ID and the RC's and
-the station's addresses from the first RC status packet whose CRC matches. The `pairing` text sensor shows what arrives, as 18 hex
+the station's addresses from the first RC status packet. The `pairing` text sensor shows what arrives, as 18 hex
 digits (bytes 8 to 16 of the RC's packets: the system ID, the RC's address, the station's address and the device
 types). After that, only packets with this system ID (bytes 8, 9 and 13, 14) count, so a neighbour's Arexa does
 not feed its weather into the sensors or move the counter. To skip the learning, put that value into the hub, for example `pairing: 1a2b3c4d5e1a2b6f70` (made up: use yours).
@@ -77,8 +74,8 @@ Then the buttons work as soon as any packet with that system ID (RC or station) 
 **Sending and its result:** a command goes out as 3 copies 30 ms apart. The station answers the first copy it
 hears, 14 ms later, with the command's counter. Without that answer, I send again with a new counter every 300 ms,
 at most 4 times. A mode command needs one more send, because the station answers with its mode from before the
-command: it counts as done when an answer shows the new mode. About 1 station answer in 5 is not heard, so a
-second send happens now and then. The `last_command` text sensor shows the result, so an automation can alert:
+command: it counts as done when an answer shows the new mode. Station answers are often damaged (the CRC does not
+match, and only packets with a matching CRC count), so a second send happens now and then. The `last_command` text sensor shows the result, so an automation can alert:
 `stop: confirmed`, `stop: no answer after 4 sends`, `auto: mode unchanged after 4 sends`,
 `stop: not sent, RC not heard yet`, or `open: replaced by stop` (a new command stops the one being sent). Failures
 are also logged as warnings.
@@ -112,11 +109,12 @@ I decoded the protocol with an RTL-SDR, starting from the rtl_433 decoder `elsne
 frame and the CRC. The Solexa (the shade version) uses the same radio protocol: my model also decodes its
 recordings in rtl_433_tests, so the buttons may work there too, but its sensor bytes are different.
 
-Receiving: the chip hands over raw chips (its own Manchester decoder locks on the wrong chip phase about half the
-time with this short preamble), synced on the 16 chips of `ce`, and the ESP decodes them. All 37 frame bytes after the sync word arrive (74 FIFO
-bytes, read while the packet comes in), so the CRC is checked. A packet with a broken chip pair is still used for
-the fields with a check of their own (the temperatures and the wind are pairs); everything else (rain, wind alarm,
-brightness, mode, rain sensor, the counter, the learning) comes only from packets whose CRC matches. The station answers the RC 14 ms after its packet, so the component sets the main loop interval to 2 ms (the
+Receiving: the chip decodes the Manchester itself, synced on the first two frame bytes `ce ad` (the preamble is
+too short to fix the chip phase; the sync word does). The 36 bytes after it, with the CRC, fit the 64-byte FIFO.
+Only packets whose CRC matches are used: the chip's decoder does not say which bytes are broken. I also tried raw
+chips decoded on the ESP (sync on the 16 chips of `ce`, 74 FIFO bytes read while the packet arrives, damaged packets
+used for the fields with a check of their own): over 4 hours alternating, 29% of the station's packets came in
+with a matching CRC that way, against 42% with the chip's decoder. The station answers the RC 14 ms after its packet, so the component sets the main loop interval to 2 ms (the
 default 16 ms misses most answers). The gain is frozen once the sync word is found: the station is often much
 weaker than the RC, and gain steps inside its packets broke them into bursts of wrong chips. Sending: the chip does
 the Manchester coding itself (an ESP8266 cannot time 10 µs chips in software while WiFi runs).

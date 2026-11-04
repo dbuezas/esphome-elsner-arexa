@@ -18,7 +18,7 @@ CONFIG_SCHEMA = cv.Schema(
         cv.Optional(CONF_PAIRING): text_sensor.text_sensor_schema(
             icon="mdi:identifier", entity_category=ENTITY_CATEGORY_DIAGNOSTIC
         ),
-        # the station's value bytes 17..35 in hex, ".." for a byte that did not arrive clean (to work out new values)
+        # the station's value bytes 17..35 in hex (to work out new values)
         cv.Optional(CONF_STATION_RAW): text_sensor.text_sensor_schema(
             icon="mdi:hexadecimal", entity_category=ENTITY_CATEGORY_DIAGNOSTIC
         ),

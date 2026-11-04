@@ -16,12 +16,15 @@ release). Ordered by priority.
 
 - Done on 2026-11-03: #1 (confirmed sends, Last Command sensor), #3 (fixed by the non-blocking send: station
   answers to a send read -62 dBm like its minute answers), the per-packet log of #6, #2 (own system ID only, counter only from
-  own packets), #4 (the whole frame with its CRC: a copy of the cc1101 driver reads
-  packets longer than the FIFO; the fields without a check, the counter and the learning need a matching CRC).
+  own packets), #4 (the whole frame with its CRC).
 - Also done on 2026-11-03: #7 (inside temperature checked by byte 23), #9 (RC presses de-duplicated by counter),
   #10 (`down` renamed to `close`), #5 in part (see below), the command order noted at each list.
 - Fixed on 2026-11-03: a send across `v5 = 00` kept the old `v7` and K, and the station ignored it (and every send
   after it until the RC resynced). Now `v7 + 2`, `K - 1`, as the RC does; tested with 140 Stop sends across a wrap.
+
+- Done on 2026-11-04: receiving with the chip's Manchester decoder (sync `ce ad`, 36 bytes, stock cc1101 driver),
+  only packets with a matching CRC. Measured against raw chips (4 h alternating): station CRC ok in 42% of RC
+  minutes against 29%. Also tried: sync on a later header byte (`ba`, raw): worse than `ce` (46% against 58%).
 
 ## High
 
@@ -35,29 +38,29 @@ Raw Outside keeps updating from CRC-ok packets. To do: work out the encoding on 
 ### 6. Diagnostics for reception
 - A diagnostic sensor for the station hit rate: count RC status packets with and without a station answer within
   ~50 ms. That turns "it worked better this morning" into a graph.
+- Most station packets arrive but fail the CRC (at -62 dBm, so not weak): the bad bytes are spread over the whole
+  frame (raw-chip runs), and the frequency offset is small. Trying the chip's data rate offset compensation
+  (BS_LIMIT) next.
 - Not the cause of lost station answers (measured on 2026-11-03 with a timed copy of the cc1101 driver): latency
   (interrupt to loop 0.04-0.07 ms, back in RX after 2.1-2.2 ms, the same in hit and missed minutes; the station starts
   14 ms after the RC), WiFi, FOC off (worse), a full re-init after the RC packet, 15/16 sync (20 times more noise
   syncs). In a miss the station packet arrives but its start (preamble, `ce`, `ad`) is broken and the radio locks on
-  later inside it. The open idea is syncing on frame byte 2 (comment in `start_listening()`): test on 30 Nov, not
-  before.
+  later inside it (measured with raw chips).
 
 ### 8. Station Raw lacks the system ID
 Add bytes 8..16 (and the counter 5..7), or a separate text sensor, so foreign or broken packets are visible.
 
 ### 13. Research: answers to our sends fail the CRC more often
-In fast Stop series, 74 of 142 station answers had a matching CRC, against about 80% of its minute answers. The
-counter bytes were mostly clean, so confirmation still worked. Check whether our next copy (30 ms after the first)
-or the RX restart after a TX clips the answer.
+In fast Stop series (raw chips), 74 of 142 station answers had a matching CRC, against about 80% of its minute
+answers. Confirmation now needs a matching CRC, so this costs extra sends. Check whether our next copy (30 ms after
+the first) or the RX restart after a TX clips the answer. The stock driver also keeps the RX FIFO through a send
+(no SFRX), so a packet half received when we send makes the next one invalid; offer that fix upstream.
 
 ## Low
 
 - The command list exists four times in an order that must match (now noted at each). Generate from one list?
 - `validate_pairing`: check that bytes 8, 9 equal 13, 14, to catch a typo.
-- Offer the long-packet addition to the cc1101 driver upstream (ESPHome), so the copy can go.
 - Wind: one byte, so at most 25.5 m/s; what the station sends above that is unknown.
 - #9 (RC presses de-duplicated by counter) is untested: press a button on the real RC and check one event per press.
-- Mode confirmation reads byte 25 without the CRC (only `b3`/`bf` accepted). Fine so far; require the CRC if a false
-  confirmation ever shows up.
-- The cc1101 copy does not follow ESPHome's driver updates: compare it after each ESPHome release until upstream
-  has the long-packet addition.
+- A CRC-ok packet with another `v7` always replaces the counter, so a late packet of an older block could roll it
+  back (rare, heals with the RC's next resync). Accept only a newer `v7`, once it is clear how `v7` changes on a resync.
