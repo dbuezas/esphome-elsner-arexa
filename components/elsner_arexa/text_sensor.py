@@ -23,7 +23,7 @@ CONFIG_SCHEMA = cv.Schema(
             icon="mdi:hexadecimal", entity_category=ENTITY_CATEGORY_DIAGNOSTIC
         ),
         # the result of the last command sent: "open: confirmed", "open: no answer after 4 sends",
-        # "auto: mode unchanged after 4 sends", "open: not sent, RC not heard yet", "open: replaced by stop"
+        # "auto: mode unchanged after 4 sends", "open: not sent, no counter heard yet", "open: replaced by stop"
         cv.Optional(CONF_LAST_COMMAND): text_sensor.text_sensor_schema(icon="mdi:check-network"),
     }
 )

@@ -99,7 +99,7 @@ The value scales come from my own RC display readings, so they are a first fit:
 | inside temperature | bytes 22, 23 (see Protocol) | the RC cooled in a freezer and warmed up: every display step from -1 to 13 °C, plus 20 to 25 °C; a thermometer next to the RC agrees within 0.1 °C |
 | outside temperature | bytes 17, 18 (see Protocol) | 30 readings, 7 to 11 °C; below 0 °C not seen yet |
 | brightness | (byte 24 - 2) × 135 lx | 5 readings from 0 to 6.5 klux (the RC shows whole klux) |
-| wind | (256 - byte 19) / 10 m/s | 3 readings: 0, 1 and 2 m/s (the RC shows whole m/s) |
+| wind | ((256 - byte 19) & 0xff) / 10 m/s | 3 readings: 0, 1 and 2 m/s (the RC shows whole m/s) |
 
 If you have more pairs (RC display, the `raw_*` sensors), please open an issue.
 
