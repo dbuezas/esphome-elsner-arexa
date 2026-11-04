@@ -41,6 +41,33 @@ static uint16_t crc16(const uint8_t *data, size_t len) {
   return crc;
 }
 
+// Repairs a single wrong bit in bytes 2..37 (the chip's Manchester decoder guesses a bit when a chip pair is
+// broken: most damaged packets have one wrong bit). The CRC-16 tells any 3 bit errors apart at this length, so one
+// is found for sure. The CRC is linear: a wrong bit at position p changes it by x^(288 - 1 - p + 16) mod the
+// polynomial, whatever the data. True if the CRC matches (afterwards); *fixed tells whether a bit was flipped.
+static bool crc_check_and_fix(uint8_t *c, bool *fixed) {
+  const uint16_t syndrome = crc16(c, 36) ^ (c[36] << 8 | c[37]);
+  *fixed = syndrome != 0;
+  if (syndrome == 0)
+    return true;
+  if ((syndrome & (syndrome - 1)) == 0) {  // one bit of the CRC bytes themselves
+    if (syndrome >> 8)
+      c[36] ^= syndrome >> 8;
+    else
+      c[37] ^= syndrome;
+    return true;
+  }
+  uint16_t r = 0x1021;  // the change for the last data bit (bit 7 of byte 35)
+  for (int p = 36 * 8 - 1; p >= 16; p--) {
+    if (r == syndrome) {
+      c[p / 8] ^= 0x80 >> (p % 8);
+      return true;
+    }
+    r = r & 0x8000 ? (r << 1) ^ 0x1021 : r << 1;
+  }
+  return false;
+}
+
 static uint8_t parity_bit(uint8_t seed, int k) { return __builtin_parity(seed & MASK[k]) ^ INV[k]; }
 
 // A temperature in tenths of a degree: a = base - low, b = 2 * low + sign (base 168 for the RC, 154 for the
@@ -135,12 +162,14 @@ void ElsnerArexa::loop() {
 
 void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_offset) {
   // frame bytes 0..37: the sync word ce ad, then what the chip handed over. A packet is used only with a matching
-  // CRC (bytes 36, 37 over 0..35): the chip's Manchester decoder does not tell which bytes are broken.
+  // CRC (bytes 36, 37 over 0..35), after repairing one wrong bit: the chip's Manchester decoder does not tell which
+  // bytes are broken.
   if (x.size() != N - 2)
     return;
   uint8_t c[N] = {HEADER[0], HEADER[1]};
   std::copy(x.begin(), x.end(), c + 2);
-  if (crc16(c, 36) != (c[36] << 8 | c[37])) {
+  bool fixed;
+  if (!crc_check_and_fix(c, &fixed) || c[2] != HEADER[2] || c[3] != HEADER[3]) {
     // noise often matches the sync word (about once a second); with the rest of the header too it is an Arexa packet
     if (c[2] == HEADER[2] && c[3] == HEADER[3])
       ESP_LOGD(TAG, "Packet with a wrong CRC, %.0f dBm: %s", rssi, format_hex(c, N).c_str());
@@ -155,8 +184,12 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
                      : sender == this->rc_address_      ? "RC"
                      : sender == this->station_address_ ? "station"
                                                          : "other";
-  ESP_LOGD(TAG, "Packet from %s %02x: counter %02x %02x k %02x, %.0f dBm", from, sender, v[5], v[7],
-           static_cast<uint8_t>(v[6] + 2 * v[5]), rssi);
+  ESP_LOGD(TAG, "Packet from %s %02x: counter %02x %02x k %02x, %.0f dBm%s", from, sender, v[5], v[7],
+           static_cast<uint8_t>(v[6] + 2 * v[5]), rssi, fixed ? ", one bit repaired" : "");
+  // a repaired packet counts only once my system ID can confirm it (a packet with many wrong bits can look like a
+  // repairable one: about 1 in 200)
+  if (fixed && !this->learned_)
+    return;
 
   const bool rc_status = v[17] == 0x6a && v[18] == 0x30 && v[19] == 0x30 && v[20] == 0x30;
   if (rc_status) {
