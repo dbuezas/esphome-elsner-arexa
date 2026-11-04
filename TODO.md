@@ -38,9 +38,10 @@ Raw Outside keeps updating from CRC-ok packets. To do: work out the encoding on 
 ### 6. Diagnostics for reception
 - A diagnostic sensor for the station hit rate: count RC status packets with and without a station answer within
   ~50 ms. That turns "it worked better this morning" into a graph.
-- Most station packets arrive but fail the CRC (at -62 dBm, so not weak): the bad bytes are spread over the whole
-  frame (raw-chip runs), and the frequency offset is small. Trying the chip's data rate offset compensation
-  (BS_LIMIT) next.
+- Many station packets arrive but fail the CRC (at -62 dBm, so not weak): the errors are spread over the whole
+  frame, and the frequency offset is small. About 40% of them have one wrong bit, which the CRC now repairs: station
+  CRC ok 56% of RC minutes instead of 42%, Stops 1 of 20 unconfirmed instead of 6 (1 h each, 2026-11-04). The
+  chip's data rate offset compensation (BS_LIMIT 6.25%) made it worse (2 h alternating).
 - Not the cause of lost station answers (measured on 2026-11-03 with a timed copy of the cc1101 driver): latency
   (interrupt to loop 0.04-0.07 ms, back in RX after 2.1-2.2 ms, the same in hit and missed minutes; the station starts
   14 ms after the RC), WiFi, FOC off (worse), a full re-init after the RC packet, 15/16 sync (20 times more noise
@@ -52,7 +53,8 @@ Add bytes 8..16 (and the counter 5..7), or a separate text sensor, so foreign or
 
 ### 13. Research: answers to our sends fail the CRC more often
 In fast Stop series (raw chips), 74 of 142 station answers had a matching CRC, against about 80% of its minute
-answers. Confirmation now needs a matching CRC, so this costs extra sends. Check whether our next copy (30 ms after
+answers. Confirmation needs a matching CRC (one bit repaired at most): 20 Stops gave 14 confirmed after 1 send,
+3 after 2, 2 after 3, 1 not confirmed (the station took it). Check whether our next copy (30 ms after
 the first) or the RX restart after a TX clips the answer. The stock driver also keeps the RX FIFO through a send
 (no SFRX), so a packet half received when we send makes the next one invalid; offer that fix upstream.
 
