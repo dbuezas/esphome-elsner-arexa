@@ -42,9 +42,10 @@ static uint16_t crc16(const uint8_t *data, size_t len) {
 }
 
 // Repairs a single wrong bit in bytes 2..37 (the chip's Manchester decoder guesses a bit when a chip pair is
-// broken: most damaged packets have one wrong bit). The CRC-16 tells any 3 bit errors apart at this length, so one
-// is found for sure. The CRC is linear: a wrong bit at position p changes it by x^(288 - 1 - p + 16) mod the
-// polynomial, whatever the data. True if the CRC matches (afterwards); *fixed tells whether a bit was flipped.
+// broken: most damaged packets have one wrong bit). The CRC-16 detects any 3 wrong bits at this length, so a single
+// wrong bit is found for sure (but 3 or more can look like one: see decode_). The CRC is linear: a wrong bit at
+// position p changes it by x^(288 - 1 - p + 16) mod the polynomial, whatever the data.
+// True if the CRC matches (afterwards); *fixed tells whether a bit was flipped.
 static bool crc_check_and_fix(uint8_t *c, bool *fixed) {
   const uint16_t syndrome = crc16(c, 36) ^ (c[36] << 8 | c[37]);
   *fixed = syndrome != 0;
@@ -57,7 +58,7 @@ static bool crc_check_and_fix(uint8_t *c, bool *fixed) {
       c[37] ^= syndrome;
     return true;
   }
-  uint16_t r = 0x1021;  // the change for the last data bit (bit 7 of byte 35)
+  uint16_t r = 0x1021;  // the change for the last data bit (the lowest bit of byte 35, sent last)
   for (int p = 36 * 8 - 1; p >= 16; p--) {
     if (r == syndrome) {
       c[p / 8] ^= 0x80 >> (p % 8);
@@ -100,6 +101,10 @@ void ElsnerArexa::set_fixed_pairing(const std::vector<uint8_t> &pairing) {
 }
 
 void ElsnerArexa::setup() {
+  if (this->radio_->is_failed()) {
+    this->mark_failed();
+    return;
+  }
   this->radio_->register_listener(this);
   this->start_listening();
   // The station answers the RC 14 ms after its packet, and the CC1101 driver listens again only when the main loop
@@ -187,7 +192,8 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
   ESP_LOGD(TAG, "Packet from %s %02x: counter %02x %02x k %02x, %.0f dBm%s", from, sender, v[5], v[7],
            static_cast<uint8_t>(v[6] + 2 * v[5]), rssi, fixed ? ", one bit repaired" : "");
 
-  const bool rc_status = v[17] == 0x6a && v[18] == 0x30 && v[19] == 0x30 && v[20] == 0x30;
+  // not from a repaired packet: a wrong pairing would stay until a reboot
+  const bool rc_status = !fixed && v[17] == 0x6a && v[18] == 0x30 && v[19] == 0x30 && v[20] == 0x30;
   if (rc_status) {
 #ifdef USE_TEXT_SENSOR
     // the pairing of the RC heard on the air (also with a fixed pairing: to see what arrives)
@@ -325,7 +331,7 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
 // The answer to the command being sent carries its counter. A mode command is done when the answer has the new mode:
 // the station answers with its state from before the command, so that takes a second send.
 void ElsnerArexa::check_answer_(const uint8_t *v) {
-  if (this->cmd_ < 0 || v[5] != this->sent_v5_ || v[7] != this->v7_)
+  if (this->cmd_ < 0 || v[5] != this->sent_v5_ || v[7] != this->sent_v7_)
     return;
   const bool mode = this->cmd_ == CMD_AUTO || this->cmd_ == CMD_MANUAL;
   if (!mode || v[25] == (this->cmd_ == CMD_AUTO ? 0xbf : 0xb3)) {
@@ -343,7 +349,7 @@ bool ElsnerArexa::send_command(Command cmd) {
   }
   if (!this->learned_ || this->v5_ < 0) {
     this->cmd_ = cmd;
-    this->finish_("not sent, RC not heard yet");
+    this->finish_("not sent, no counter heard yet");
     return false;
   }
   this->cmd_ = cmd;
@@ -382,6 +388,7 @@ void ElsnerArexa::new_send_() {
   }
   this->v5_ = v5;
   this->sent_v5_ = v5;
+  this->sent_v7_ = this->v7_;
   value[5] = v5;
   value[6] = this->k_ - 2 * v5;
   value[7] = this->v7_;

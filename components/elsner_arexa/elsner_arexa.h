@@ -21,7 +21,6 @@
 #ifdef USE_SWITCH
 #include "esphome/components/switch/switch.h"
 #endif
-#include <utility>
 #include <vector>
 
 namespace esphome::elsner_arexa {
@@ -30,8 +29,8 @@ namespace esphome::elsner_arexa {
 enum Command : uint8_t { CMD_OPEN = 0, CMD_STOP, CMD_CLOSE, CMD_AUTO, CMD_MANUAL };
 
 // Elsner Arexa window control (RC handset + weather station) on a CC1101 in packet mode.
-// Listens to the RC and the station, learns the pairing (system ID, both addresses) and the packet counter from the RC's
-// own packets, and sends RC commands built from them. See the README for the radio format.
+// Listens to the RC and the station, learns the pairing (system ID, both addresses) from the RC's own packets and the
+// packet counter from both, and sends RC commands built from them. See the README for the radio format.
 class ElsnerArexa : public Component, public cc1101::CC1101Listener {
  public:
   void set_radio(cc1101::CC1101Component *radio) { this->radio_ = radio; }
@@ -107,6 +106,7 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
   int sends_{0};
   int copies_{0};  // copies of the current send so far
   uint8_t sent_v5_{0};  // the counter of the current send
+  uint8_t sent_v7_{0};
   uint32_t send_ms_{0};  // when the current send started
   bool answered_{false};  // the station answered some send of this command (for a mode command: with the old mode)
   std::vector<uint8_t> frame_;
