@@ -162,8 +162,8 @@ void ElsnerArexa::loop() {
 
 void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_offset) {
   // frame bytes 0..37: the sync word ce ad, then what the chip handed over. A packet is used only with a matching
-  // CRC (bytes 36, 37 over 0..35), after repairing one wrong bit: the chip's Manchester decoder does not tell which
-  // bytes are broken.
+  // CRC (bytes 36, 37 over 0..35): the chip's Manchester decoder does not tell which bytes are broken. One wrong bit
+  // is repaired, but such a packet only confirms a send (see below).
   if (x.size() != N - 2)
     return;
   uint8_t c[N] = {HEADER[0], HEADER[1]};
@@ -186,10 +186,6 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
                                                          : "other";
   ESP_LOGD(TAG, "Packet from %s %02x: counter %02x %02x k %02x, %.0f dBm%s", from, sender, v[5], v[7],
            static_cast<uint8_t>(v[6] + 2 * v[5]), rssi, fixed ? ", one bit repaired" : "");
-  // a repaired packet counts only once my system ID can confirm it (a packet with many wrong bits can look like a
-  // repairable one: about 1 in 200)
-  if (fixed && !this->learned_)
-    return;
 
   const bool rc_status = v[17] == 0x6a && v[18] == 0x30 && v[19] == 0x30 && v[20] == 0x30;
   if (rc_status) {
@@ -215,6 +211,13 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
   if (v[8] != this->pairing_[0] || v[9] != this->pairing_[1] || v[13] != this->pairing_[5] ||
       v[14] != this->pairing_[6]) {
     ESP_LOGD(TAG, "Not my system ID, dropped");
+    return;
+  }
+  // A packet with 3 or more wrong bits can look like a repairable one (about 1 in 230), and then the repair makes it
+  // wrong. So a repaired packet only confirms a send: that needs the station's address and the exact counter sent.
+  if (fixed) {
+    if (sender == this->station_address_)
+      this->check_answer_(v);
     return;
   }
 
@@ -265,17 +268,7 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
       this->remote_->trigger(COMMAND_NAMES[cmd]);
 #endif
   } else if (sender == this->station_address_ && v[31] == 0x30 && v[32] == 0x30) {
-    // the answer to the command being sent carries its counter. A mode command is done when the answer has the new
-    // mode: the station answers with its state from before the command, so that takes a second send.
-    if (this->cmd_ >= 0 && v[5] == this->sent_v5_ && v[7] == this->v7_) {
-      const bool mode = this->cmd_ == CMD_AUTO || this->cmd_ == CMD_MANUAL;
-      if (!mode || (v[25] == (this->cmd_ == CMD_AUTO ? 0xbf : 0xb3))) {
-        this->finish_("confirmed");
-      } else {
-        this->answered_ = true;
-        this->copies_ = 3;
-      }
-    }
+    this->check_answer_(v);
     // the station's status (the start-up packets after a battery change have 00/ff in bytes 31..35)
 #ifdef USE_TEXT_SENSOR
     if (this->station_raw_ != nullptr) {
@@ -326,6 +319,20 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
         this->auto_mode_switch_->publish_state(automatic);
 #endif
     }
+  }
+}
+
+// The answer to the command being sent carries its counter. A mode command is done when the answer has the new mode:
+// the station answers with its state from before the command, so that takes a second send.
+void ElsnerArexa::check_answer_(const uint8_t *v) {
+  if (this->cmd_ < 0 || v[5] != this->sent_v5_ || v[7] != this->v7_)
+    return;
+  const bool mode = this->cmd_ == CMD_AUTO || this->cmd_ == CMD_MANUAL;
+  if (!mode || v[25] == (this->cmd_ == CMD_AUTO ? 0xbf : 0xb3)) {
+    this->finish_("confirmed");
+  } else {
+    this->answered_ = true;
+    this->copies_ = 3;
   }
 }
 

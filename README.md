@@ -112,8 +112,10 @@ recordings in rtl_433_tests, so the buttons may work there too, but its sensor b
 Receiving: the chip decodes the Manchester itself, synced on the first two frame bytes `ce ad` (the preamble is
 too short to fix the chip phase; the sync word does). The 36 bytes after it, with the CRC, fit the 64-byte FIFO.
 Only packets whose CRC matches are used: the chip's decoder does not say which bytes are broken. Where a chip pair
-is broken, it guesses the bit, so many damaged packets have just one wrong bit: the CRC finds and repairs it
-(once the system ID is known, which such a packet must then match). I also tried raw
+is broken, it guesses the bit, so many damaged packets have just one wrong bit: the CRC finds and repairs it. A
+repair can also turn a packet with 3 or more wrong bits into a wrong one (about 1 in 230 of those), so a repaired
+packet only confirms a send (it must carry the station's address, my system ID and the exact counter sent); the
+sensors, the counter and the RC events come only from packets whose CRC matched as received. I also tried raw
 chips decoded on the ESP (sync on the 16 chips of `ce`, 74 FIFO bytes read while the packet arrives, damaged packets
 used for the fields with a check of their own): over 4 hours alternating, 29% of the station's packets came in
 with a matching CRC that way, against 42% with the chip's decoder. The station answers the RC 14 ms after its packet, so the component sets the main loop interval to 2 ms (the

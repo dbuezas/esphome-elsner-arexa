@@ -39,8 +39,10 @@ Raw Outside keeps updating from CRC-ok packets. To do: work out the encoding on 
 - A diagnostic sensor for the station hit rate: count RC status packets with and without a station answer within
   ~50 ms. That turns "it worked better this morning" into a graph.
 - Many station packets arrive but fail the CRC (at -62 dBm, so not weak): the errors are spread over the whole
-  frame, and the frequency offset is small. About 40% of them have one wrong bit, which the CRC now repairs: station
-  CRC ok 56% of RC minutes instead of 42%, Stops 1 of 20 unconfirmed instead of 6 (1 h each, 2026-11-04). The
+  frame, and the frequency offset is small. About 40% of them have one wrong bit, which the CRC can repair: station
+  CRC ok 56% of RC minutes instead of 42%, Stops 1 of 20 unconfirmed instead of 6 (1 h each, 2026-11-04). A repair
+  can make a packet with 3+ wrong bits wrong (1 in 230 of those, about 2 a day), so repaired packets only confirm
+  sends; the sensors stay at the 42%. The
   chip's data rate offset compensation (BS_LIMIT 6.25%) made it worse (2 h alternating).
 - Not the cause of lost station answers (measured on 2026-11-03 with a timed copy of the cc1101 driver): latency
   (interrupt to loop 0.04-0.07 ms, back in RX after 2.1-2.2 ms, the same in hit and missed minutes; the station starts
