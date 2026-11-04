@@ -141,7 +141,9 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
   uint8_t c[N] = {HEADER[0], HEADER[1]};
   std::copy(x.begin(), x.end(), c + 2);
   if (crc16(c, 36) != (c[36] << 8 | c[37])) {
-    ESP_LOGV(TAG, "Packet with a wrong CRC, %.0f dBm", rssi);
+    // noise often matches the sync word (about once a second); with the rest of the header too it is an Arexa packet
+    if (c[2] == HEADER[2] && c[3] == HEADER[3])
+      ESP_LOGD(TAG, "Packet with a wrong CRC, %.0f dBm: %s", rssi, format_hex(c, N).c_str());
     return;
   }
   const uint8_t seed = c[4];
