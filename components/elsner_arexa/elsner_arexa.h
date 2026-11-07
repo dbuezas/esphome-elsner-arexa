@@ -50,7 +50,9 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
   // (for example a remote_transmitter in OOK mode).
   void start_listening();
   // Sends an RC command (current counter, random seed) until the station answers it: a new counter every 300 ms, at
-  // most 4 sends. The result goes to the log and the last command text sensor. False if no RC packet was heard yet.
+  // most 4 sends. Without a counter (no packet heard since the start) or without any answer, it first announces a new
+  // counter block as the RC does (a resync) and then sends the command. The result goes to the log and the last
+  // command text sensor. False if the pairing is not known yet.
   bool send_command(Command cmd);
 
 #ifdef USE_SENSOR
@@ -104,10 +106,13 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
 
   // the command being sent (-1: none). Each send has a new counter and goes out as 3 copies 30 ms apart.
   int cmd_{-1};
+  bool resync_{false};    // the current sends announce a new counter block (see the README, Resync)
+  bool resynced_{false};  // this command already did a resync
   int sends_{0};
   int copies_{0};  // copies of the current send so far
   uint8_t sent_v5_{0};  // the counter of the current send
   uint8_t sent_v7_{0};
+  uint8_t sent_k_{0};
   uint32_t send_ms_{0};  // when the current send started
   bool answered_{false};  // the station answered some send of this command (for a mode command: with the old mode)
   std::vector<uint8_t> frame_;

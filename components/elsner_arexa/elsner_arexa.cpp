@@ -71,12 +71,7 @@ static bool crc_check_and_fix(uint8_t *c, bool *fixed) {
 
 static uint8_t parity_bit(uint8_t seed, int k) { return __builtin_parity(seed & MASK[k]) ^ INV[k]; }
 
-// A temperature in tenths of a degree: a = base - low, b = 2 * low + sign (base 168 for the RC, 154 for the
-// station). The RC also sends the high byte: byte 24 = 0xd0 + 2 * high; the station only has the sign bit.
-static float temperature(uint8_t a, uint8_t b, uint8_t base) {
-  uint8_t low = base - a;
-  return (low - ((b & 1) ? 256 : 0)) / 10.0f;
-}
+// The RC's temperature in tenths of a degree: byte 22 = 168 - low, byte 23 = 2 * low + sign, byte 24 = 0xd0 + 2 * high.
 static float temperature_with_high(uint8_t a, uint8_t high_byte, uint8_t base) {
   uint8_t low = base - a;
   int8_t high = static_cast<int8_t>(high_byte - 0xd0) / 2;
@@ -172,7 +167,14 @@ void ElsnerArexa::loop() {
     this->transmit_();
   else if (t >= 300 && this->sends_ < 4)
     this->new_send_();
-  else if (t >= 300)
+  else if (t >= 300 && this->resync_)
+    this->finish_("no answer to a resync");
+  else if (t >= 300 && !this->answered_ && !this->resynced_) {
+    // maybe the station has a newer counter than mine: announce a new block, then send the command again
+    this->resync_ = true;
+    this->sends_ = 0;
+    this->new_send_();
+  } else if (t >= 300)
     this->finish_(!this->answered_                                       ? "no answer after 4 sends"
                   : this->cmd_ == CMD_AUTO || this->cmd_ == CMD_MANUAL ? "mode unchanged after 4 sends"
                                                                          : "confirmed");
@@ -240,13 +242,16 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
     return;
   }
 
-  // the counter (RC and station share it): v5 counts down, v6 = k - 2 v5, v7 changes rarely. Keep the newest one: after
-  // a command, the RC's next status has an older counter (the station ignores it, the RC shows ER and resyncs; a
-  // resync starts a new v7). A send with that older counter would be ignored too.
-  if (this->v5_ < 0 || v[7] != this->v7_ || static_cast<int8_t>(v[5] - this->v5_) < 0) {
+  // The counter (RC and station share it): v5 counts down within a block (v7, k). Keep the newest v5: after a
+  // command, the RC's next status has an older one (the station ignores it, the RC shows ER and resyncs: a random new
+  // block, see the README). Only the station's packets change the block: it answers only on blocks it takes, while
+  // the RC repeats its stale status a few times before it resyncs.
+  const uint8_t k = v[6] + 2 * v[5];
+  if (this->v5_ < 0 || (v[7] == this->v7_ && k == this->k_ && static_cast<int8_t>(v[5] - this->v5_) < 0) ||
+      (sender == this->station_address_ && (v[7] != this->v7_ || k != this->k_))) {
     this->v5_ = v[5];
     this->v7_ = v[7];
-    this->k_ = v[6] + 2 * v[5];
+    this->k_ = k;
   }
 
   if (sender == this->rc_address_) {
@@ -286,11 +291,14 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
     if (this->remote_ != nullptr)
       this->remote_->trigger(COMMAND_NAMES[cmd]);
 #endif
-  } else if (sender == this->station_address_ && v[31] == 0x30 && v[32] == 0x30) {
+  } else if (sender == this->station_address_) {
     this->check_answer_(v);
     if (this->cmd_ < 0)
       this->fix_gain_();
-    // the station's status (the start-up packets after a battery change have 00/ff in bytes 31..35)
+    // the rest is the station's status: not a resync answer or a start-up packet after a battery change (both have
+    // 00/ff in bytes 31..35)
+    if (v[31] != 0x30 || v[32] != 0x30)
+      return;
 #ifdef USE_TEXT_SENSOR
     if (this->station_raw_ != nullptr) {
       char hex[3 * 19];
@@ -304,22 +312,42 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
       this->station_rssi_->publish_state(rssi);
     if (this->station_freq_offset_ != nullptr)
       this->station_freq_offset_->publish_state(freq_offset / 1000.0f);
-    // byte 18 repeats the temperature (2 * low + sign)
-    const bool outside_ok = ((v[18] ^ static_cast<uint8_t>(2 * static_cast<uint8_t>(154 - v[17]))) & 0xfe) == 0;
-    // the decoded range is -25.6 to +25.5 degrees; beyond it the encoding is unknown: report the bytes, publish nothing
-    if (!outside_ok)
-      ESP_LOGW(TAG, "Outside temperature: bytes 17, 18 %02x %02x do not pass the pair check (out of the known range?)",
-               v[17], v[18]);
-    if (outside_ok && this->outside_temperature_ != nullptr)
-      this->outside_temperature_->publish_state(temperature(v[17], v[18], 154));
+    // Bytes 17..20 are one chain: 17 = 154 - low, 18 = 2 * low + sign, 19 = 2 * high - wind, 20 = 2 * wind (the
+    // temperature in tenths = 256 * high + low, the wind in 0.1 m/s). The sign bit gives high = -1 or 0; high = 1
+    // (above 25.5 degrees, not seen yet) only shows in the wind pair.
+    const uint8_t low = 154 - v[17];
+    int high = (v[18] & 1) ? -1 : 0;
+    uint8_t wind = 2 * high - v[19];
+    if (static_cast<uint8_t>(2 * wind) != v[20] && high == 0) {
+      high = 1;
+      wind += 2;
+    }
+    const bool chain_ok = ((v[18] ^ static_cast<uint8_t>(2 * low)) & 0xfe) == 0 && static_cast<uint8_t>(2 * wind) == v[20];
+    if (!chain_ok)
+      ESP_LOGW(TAG, "Outside temperature and wind: bytes 17..20 %02x %02x %02x %02x do not pass the pair checks", v[17],
+               v[18], v[19], v[20]);
+    if (chain_ok && this->outside_temperature_ != nullptr)
+      this->outside_temperature_->publish_state((high * 256 + low) / 10.0f);
+    if (chain_ok && this->wind_ != nullptr)
+      this->wind_->publish_state(wind / 10.0f);
     if (this->raw_outside_ != nullptr)
       this->raw_outside_->publish_state(v[17]);
-    if (static_cast<uint8_t>(2 * v[19] + v[20]) == 0 && this->wind_ != nullptr)
-      this->wind_->publish_state(static_cast<uint8_t>(-v[19]) / 10.0f);  // a pair like the temperatures, base 0
-    if (this->brightness_ != nullptr)
-      this->brightness_->publish_state(v[24] <= 2 ? 0 : (v[24] - 2) * 135.0f);
-    if (this->raw_brightness_ != nullptr)
-      this->raw_brightness_->publish_state(v[24]);
+    // Bytes 22..24 the same way: 22 = 0x98 - low, 23 = 8 + 2 * low - high, 24 = 2 * high. Bit 7 of high only shows in
+    // byte 23. One step is about 1.05 lx (calibrated against the RC's klux display); 0 at night.
+    uint8_t bright_high = v[24] >> 1;
+    const uint8_t bright_low = 0x98 - v[22];
+    uint8_t check = 8 + 2 * bright_low - bright_high;
+    if (check != v[23]) {
+      bright_high |= 0x80;
+      check ^= 0x80;
+    }
+    const uint16_t bright = bright_high << 8 | bright_low;
+    if ((v[24] & 1) == 0 && check == v[23]) {
+      if (this->brightness_ != nullptr)
+        this->brightness_->publish_state(bright * (270.0f / 256.0f));
+      if (this->raw_brightness_ != nullptr)
+        this->raw_brightness_->publish_state(bright);
+    }
     if (this->rain_sensor_ != nullptr)
       this->rain_sensor_->publish_state(v[29]);
 #endif
@@ -349,6 +377,20 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
 void ElsnerArexa::check_answer_(const uint8_t *v) {
   if (this->cmd_ < 0 || v[5] != this->sent_v5_ || v[7] != this->sent_v7_)
     return;
+  const bool resync_answer = v[11] == 0x4d && v[12] == 0x01;
+  if (this->resync_ != resync_answer)
+    return;
+  if (this->resync_) {  // the station takes the new block: now the command
+    ESP_LOGI(TAG, "Resync to counter %02x %02x k %02x answered", v[5], v[7], this->sent_k_);
+    this->v5_ = v[5];
+    this->v7_ = v[7];
+    this->k_ = this->sent_k_;
+    this->resync_ = false;
+    this->resynced_ = true;
+    this->sends_ = 0;
+    this->new_send_();
+    return;
+  }
   const bool mode = this->cmd_ == CMD_AUTO || this->cmd_ == CMD_MANUAL;
   const bool done = mode ? v[25] == (this->cmd_ == CMD_AUTO ? 0xbf : 0xb3) : this->answered_ || v[25] != 0xbf;
   if (done) {
@@ -364,14 +406,16 @@ bool ElsnerArexa::send_command(Command cmd) {
     std::string result = std::string("replaced by ") + COMMAND_NAMES[cmd];
     this->finish_(result.c_str());
   }
-  if (!this->learned_ || this->v5_ < 0) {
+  if (!this->learned_) {
     this->cmd_ = cmd;
-    this->finish_("not sent, no counter heard yet");
+    this->finish_("not sent, pairing not known yet");
     return false;
   }
   this->cmd_ = cmd;
   this->sends_ = 0;
   this->answered_ = false;
+  this->resynced_ = false;
+  this->resync_ = this->v5_ < 0;  // no counter heard since the start (for example without the RC): announce one
   this->new_send_();
   return true;
 }
@@ -386,42 +430,71 @@ void ElsnerArexa::finish_(const char *result) {
     this->last_command_->publish_state(std::string(COMMAND_NAMES[this->cmd_]) + ": " + result);
 #endif
   this->cmd_ = -1;
+  this->resync_ = false;
 }
 
-// A fresh frame with the next counter (the station takes a packet only if its counter is newer than the last one)
+// A fresh frame: the command with the next counter (the station takes a packet only if its counter is newer than the
+// last one), or a resync request with a new random block.
 void ElsnerArexa::new_send_() {
+  const uint8_t seed = random_uint32() & 0xff;
   uint8_t value[36] = {0};
-  for (int k = 17; k < 36; k++)
-    value[k] = 0x30;
   for (int i = 0; i < 9; i++)
     value[8 + i] = this->pairing_[i];
-  for (int i = 0; i < 3; i++)
-    value[17 + i] = COMMANDS[this->cmd_][i];
-  // a new block starts at v5 = 00: v7 + 2 and k - 1 (the RC: 01 17 k 70, then 00 19 k 6f, ff 19 k 6f)
-  const uint8_t v5 = this->v5_ - 2;
-  if (this->v5_ == 1 || this->v5_ == 2) {
-    this->v7_ += 2;
-    this->k_ -= 1;
+  uint8_t v5, v7, k;
+  if (this->resync_) {
+    // README, Resync: the block follows v7 odd, k & 7f = (7b - v7 / 2) & 7f; bytes 17..31 a random tag, 32..35 and
+    // the lowest bit of byte 16 check bits of it (the station does not check them, the RC always sends them). My
+    // counter changes only when the station answers.
+    const uint32_t r = random_uint32();
+    v5 = 0x80 | (r & 0x7f);
+    v7 = (r >> 8) | 1;
+    k = ((0x7b - (v7 >> 1)) & 0x7f) | ((r >> 16) & 0x80);
+    value[11] = 0x82;
+    value[12] = 0xff;
+    const uint32_t tag = random_uint32();
+    uint8_t b[36] = {0};
+    for (int i = 17; i < 32; i++)
+      b[i] = (tag >> (i - 17)) & 1;
+    b[32] = b[17] ^ b[31];
+    b[33] = b[32] ^ b[18];
+    b[34] = b[33] ^ b[19];
+    b[35] = b[34] ^ b[20];
+    value[16] = 2 * seed + 0x53 + (b[30] ^ b[31] ^ 1);
+    for (int i = 17; i < 36; i++)
+      value[i] = b[i] ? 0xff : 0x00;
+  } else {
+    for (int i = 17; i < 36; i++)
+      value[i] = 0x30;
+    for (int i = 0; i < 3; i++)
+      value[17 + i] = COMMANDS[this->cmd_][i];
+    // a new block starts at v5 = 00: v7 + 2 and k - 1 (the RC: 01 17 k 70, then 00 19 k 6f, ff 19 k 6f)
+    v5 = this->v5_ - 2;
+    if (this->v5_ == 1 || this->v5_ == 2) {
+      this->v7_ += 2;
+      this->k_ -= 1;
+    }
+    this->v5_ = v5;
+    v7 = this->v7_;
+    k = this->k_;
   }
-  this->v5_ = v5;
   this->sent_v5_ = v5;
-  this->sent_v7_ = this->v7_;
+  this->sent_v7_ = v7;
+  this->sent_k_ = k;
   value[5] = v5;
-  value[6] = this->k_ - 2 * v5;
-  value[7] = this->v7_;
-  const uint8_t seed = random_uint32() & 0xff;
+  value[6] = k - 2 * v5;
+  value[7] = v7;
   auto &c = this->frame_;
   c = {0xce, 0xad, 0x93, 0xba, seed};
-  for (int k = 5; k < 36; k++)
-    c.push_back(value[k] + parity_bit(seed, k) + 2 * c[k - 1]);
+  for (int i = 5; i < 36; i++)
+    c.push_back(value[i] + parity_bit(seed, i) + 2 * c[i - 1]);
   const uint16_t crc = crc16(c.data(), 36);
   c.push_back(crc >> 8);
   c.push_back(crc & 0xff);
   this->sends_++;
   this->copies_ = 0;
   this->send_ms_ = millis();
-  ESP_LOGD(TAG, "Sending %s with counter %02x %02x k %02x (send %d)", COMMAND_NAMES[this->cmd_], v5, this->v7_, this->k_,
-           this->sends_);
+  ESP_LOGD(TAG, "Sending %s with counter %02x %02x k %02x (send %d)", this->resync_ ? "a resync" : COMMAND_NAMES[this->cmd_],
+           v5, v7, k, this->sends_);
   this->transmit_();
 }
 

@@ -22,6 +22,12 @@ def validate_pairing(value):
         return value
     if len(value) != 18 or any(ch not in "0123456789abcdef" for ch in value):
         raise cv.Invalid("pairing must be 'auto' or 18 hex digits, like the pairing text sensor shows")
+    # every packet has the system ID twice: bytes 8, 9 and 13, 14
+    if value[0:4] != value[10:14]:
+        raise cv.Invalid(
+            f"pairing: the system ID (digits 1..4, {value[0:4]}) must come again in digits 11..14 "
+            f"({value[10:14]}): a typo?"
+        )
     return value
 
 

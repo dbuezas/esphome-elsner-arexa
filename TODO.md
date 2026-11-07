@@ -22,16 +22,22 @@ release). Ordered by priority.
 - Fixed on 2026-11-03: a send across `v5 = 00` kept the old `v7` and K, and the station ignored it (and every send
   after it until the RC resynced). Now `v7 + 2`, `K - 1`, as the RC does; tested with 140 Stop sends across a wrap.
 
+- Done on 2026-11-07: the resync (README, Resync): decoded, tested on air, and used when there is no counter or no
+  answer. Only the station's packets change the counter block (the RC repeats its stale status before it
+  resyncs). The pairing check for typos. Station bytes 22, 23 (the brightness's low byte), 26 (a check byte of the
+  mode) and the wind below 0 °C (byte 19 also holds the temperature's high part) decoded.
+
 - Done on 2026-11-04: receiving with the chip's Manchester decoder (sync `ce ad`, 36 bytes, stock cc1101 driver),
   only packets with a matching CRC. Measured against raw chips (4 h alternating): station CRC ok in 42% of RC
   minutes against 29%. Also tried: sync on a later header byte (`ba`, raw): worse than `ce` (46% against 58%).
 
 ## High
 
-### 5. Outside temperature above 25.5 °C is unknown
-The station has only a sign bit, so the decoded range is -25.6 to +25.5 °C (the sign is untested too). A CRC-ok
-packet whose bytes 17, 18 fail the pair check now logs a warning with both bytes and publishes no temperature;
-Raw Outside keeps updating from CRC-ok packets. To do: work out the encoding on a hot day from those warnings.
+### 5. Outside temperature above 25.5 °C is not seen yet
+Bytes 17..20 are one chain with the wind (README, Values): byte 19 = 2 * high - wind, so above 25.5 °C high = 1
+should show in the wind pair, and the component decodes it that way. Below 0 °C (high = -1) it is seen and works.
+A packet that fails the chain checks logs a warning with bytes 17..20 and publishes neither value. To do: check on
+a hot day.
 
 ## Medium
 
@@ -67,9 +73,9 @@ send (no SFRX), so a packet half received when we send makes the next one invali
 ## Low
 
 - The command list exists four times in an order that must match (now noted at each). Generate from one list?
-- `validate_pairing`: check that bytes 8, 9 equal 13, 14, to catch a typo.
 - Wind: one byte, so at most 25.5 m/s; what the station sends above that is unknown.
 - #9 (RC presses de-duplicated by counter) is untested: press a button on the real RC and check one event per press.
-- A CRC-ok packet with another `v7` always replaces the counter, so a late packet of an older block could roll it
-  back (rare, heals with the RC's next resync). A resync picks a random block (README, Resync), so "newer" only holds within a block: e.g. accept another `v7` only
-  from a station answer to an `82 ff`, or from two packets in a row.
+- Which counter blocks the station takes is not fully clear: after a resync from the gateway it still answered the
+  RC's old block (and took a Stop on it), while after the replay test it ignored the RC's old block until the RC
+  resynced. The component follows the station's packets and resyncs when a command gets no answer, so it works
+  either way.
