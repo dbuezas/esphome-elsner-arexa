@@ -53,18 +53,24 @@ Raw Outside keeps updating from CRC-ok packets. To do: work out the encoding on 
 ### 8. Station Raw lacks the system ID
 Add bytes 8..16 (and the counter 5..7), or a separate text sensor, so foreign or broken packets are visible.
 
-### 13. Research: answers to our sends fail the CRC more often
-In fast Stop series (raw chips), 74 of 142 station answers had a matching CRC, against about 80% of its minute
-answers. Confirmation needs a matching CRC (one bit repaired at most): 20 Stops gave 14 confirmed after 1 send,
-3 after 2, 2 after 3, 1 not confirmed (the station took it). Check whether our next copy (30 ms after
-the first) or the RX restart after a TX clips the answer. The stock driver also keeps the RX FIFO through a send
-(no SFRX), so a packet half received when we send makes the next one invalid; offer that fix upstream.
+### 13. Station packets with wrong bits: solved (the AGC)
+About 40% of the station's packets came with wrong bits, at -64 dBm, 4 m away; the RC's never. Not the cause (each
+tested 4 to 12 hours alternating, 2026-11-04..06): ESP activity and WiFi (even WiFi off), the two 433 MHz radios
+(idle), background noise, centre frequency (+-5 kHz), deviation (34.9 to 47.6 kHz), bit-sync gains, TI's AGC
+values. The clues: the RC hears every station answer (it repeats its packet otherwise: once in 727), the 433.30
+radio tuned to 868 MHz got 175 of 177 answers clean at -84 dBm, and the station's answers to my own sends were 85%
+clean against 51% after the RC's packets. The AGC: frozen on the sync word, the gain was still low from the RC's
+packet (16 dB stronger) when the station answered 8 ms later. With the gain fixed: 6% of the station's packets with
+wrong bits against 43%, 93% usable against 44% (4 h alternating). The stock driver also keeps the RX FIFO through a
+send (no SFRX), so a packet half received when we send makes the next one invalid; offer that fix upstream.
 
 ## Low
 
 - The command list exists four times in an order that must match (now noted at each). Generate from one list?
 - `validate_pairing`: check that bytes 8, 9 equal 13, 14, to catch a typo.
 - Wind: one byte, so at most 25.5 m/s; what the station sends above that is unknown.
+- Outside temperature below 0 °C not seen yet (down to 0.0 so far: `9a 00`). If the station encodes it otherwise,
+  the pair check fails and the log shows the bytes.
 - #9 (RC presses de-duplicated by counter) is untested: press a button on the real RC and check one event per press.
 - A CRC-ok packet with another `v7` always replaces the counter, so a late packet of an older block could roll it
   back (rare, heals with the RC's next resync). Accept only a newer `v7`, once it is clear how `v7` changes on a resync.

@@ -119,8 +119,9 @@ sensors, the counter and the RC events come only from packets whose CRC matched 
 chips decoded on the ESP (sync on the 16 chips of `ce`, 74 FIFO bytes read while the packet arrives, damaged packets
 used for the fields with a check of their own): over 4 hours alternating, 29% of the station's packets came in
 with a matching CRC that way, against 42% with the chip's decoder. The station answers the RC 14 ms after its packet, so the component sets the main loop interval to 2 ms (the
-default 16 ms misses most answers). The gain is frozen once the sync word is found: the station is often much
-weaker than the RC, and gain steps inside its packets broke them into bursts of wrong chips. Sending: the chip does
+default 16 ms misses most answers). The gain is fixed (no AGC): with the AGC, the gain was still low from the
+RC's packet when the station answered, 16 dB weaker, and 43% of its packets came with wrong bits; with the gain
+fixed, 6% (4 hours alternating). FSK needs no gain control. Sending: the chip does
 the Manchester coding itself (an ESP8266 cannot time 10 µs chips in software while WiFi runs).
 
 ## Protocol

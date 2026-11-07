@@ -132,14 +132,25 @@ void ElsnerArexa::start_listening() {
   r->set_num_preamble(2);
   r->set_foc_bs_cs_gate(false);  // the preamble is short: correct frequency and bit timing at once
   r->set_wait_time(cc1101::WaitTime::WAIT_TIME_8_SAMPLES);
-  // keep the gain from the sync word on: gain steps during the packet broke the station's weaker packets into
-  // bursts of wrong chips
-  r->set_freeze(cc1101::Freeze::FREEZE_ON_SYNC);
   r->set_crc_enable(false);  // the Arexa's CRC is not the chip's: checked in decode_
   r->set_whitening(false);
   r->set_packet_length(N - 2);
   r->set_packet_mode(true);
   r->set_output_power(this->output_power_);
+  this->fix_gain_();
+}
+
+// The gain is fixed (no AGC): 1 ms of receiving noise brings it to the maximum, then it is frozen. With the AGC
+// (frozen on the sync word) the gain was still low from the RC's packet when the station answered 8 ms later, 16 dB
+// weaker: 43% of its packets came with wrong bits, against 6% with the gain fixed (2026-11-06, 4 h alternating). FSK
+// needs no gain control: the bits are in the frequency. Done again after each station packet (the next RC packet is
+// a minute away), in case a signal was there while the gain settled.
+void ElsnerArexa::fix_gain_() {
+  auto *r = this->radio_;
+  r->set_freeze(cc1101::Freeze::FREEZE_DEFAULT);
+  r->begin_rx();
+  delayMicroseconds(1000);
+  r->set_freeze(cc1101::Freeze::FREEZE_ANALOG_AND_DIGITAL);
   r->begin_rx();
 }
 
@@ -275,6 +286,8 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
 #endif
   } else if (sender == this->station_address_ && v[31] == 0x30 && v[32] == 0x30) {
     this->check_answer_(v);
+    if (this->cmd_ < 0)
+      this->fix_gain_();
     // the station's status (the start-up packets after a battery change have 00/ff in bytes 31..35)
 #ifdef USE_TEXT_SENSOR
     if (this->station_raw_ != nullptr) {
