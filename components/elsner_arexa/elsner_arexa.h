@@ -95,6 +95,7 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
   void check_answer_(const uint8_t *v);
   void fix_gain_();
   void publish_frame_(const char *kind, float rssi, const uint8_t *c);
+  void publish_mode_(uint8_t mode);
 
   cc1101::CC1101Component *radio_{nullptr};
   float frequency_{868.19e6f};

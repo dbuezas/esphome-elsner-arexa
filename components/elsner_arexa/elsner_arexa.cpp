@@ -353,17 +353,7 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
     if (this->wind_alarm_ != nullptr)
       this->wind_alarm_->publish_state(u[28] != 0x8b);  // 0x8b calm
 #endif
-    if (u[25] == 0xb3 || u[25] == 0xbf) {
-      const bool automatic = u[25] == 0xbf;  // 0xb3 manual, 0xbf automatic
-#ifdef USE_BINARY_SENSOR
-      if (this->auto_mode_ != nullptr)
-        this->auto_mode_->publish_state(automatic);
-#endif
-#ifdef USE_SWITCH
-      if (this->auto_mode_switch_ != nullptr)
-        this->auto_mode_switch_->publish_state(automatic);
-#endif
-    }
+    this->publish_mode_(u[25]);
   }
 }
 
@@ -389,6 +379,8 @@ void ElsnerArexa::check_answer_(const uint8_t *v) {
   const bool mode = this->cmd_ == CMD_AUTO || this->cmd_ == CMD_MANUAL;
   const bool done = mode ? v[25] == (this->cmd_ == CMD_AUTO ? 0xbf : 0xb3) : this->answered_ || v[25] != 0xbf;
   if (done) {
+    // also from a repaired packet: it matched the exact counter sent (often the only answer with the new mode)
+    this->publish_mode_(v[25]);
     this->finish_("confirmed");
   } else {
     this->answered_ = true;
@@ -484,6 +476,20 @@ void ElsnerArexa::new_send_() {
   ESP_LOGD(TAG, "Sending %s with counter %04x (send %d)", this->resync_ ? "a resync" : COMMAND_NAMES[this->cmd_],
            this->sent_n_, this->sends_);
   this->transmit_();
+}
+
+// The station's mode byte: 0xb3 manual, 0xbf automatic
+void ElsnerArexa::publish_mode_(uint8_t mode) {
+  if (mode != 0xb3 && mode != 0xbf)
+    return;
+#ifdef USE_BINARY_SENSOR
+  if (this->auto_mode_ != nullptr)
+    this->auto_mode_->publish_state(mode == 0xbf);
+#endif
+#ifdef USE_SWITCH
+  if (this->auto_mode_switch_ != nullptr)
+    this->auto_mode_switch_->publish_state(mode == 0xbf);
+#endif
 }
 
 // For the last frame text sensor: "ok -62 cead93...", "tx cead93..." (see text_sensor.py)
