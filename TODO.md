@@ -25,6 +25,8 @@ release). Ordered by priority.
 - Done on 2026-11-07 (later): the running sum for all values (rain no longer breaks the brightness), the counter
   as 16 bits with a per-system check byte (learned, or the 10th pairing byte), the station's rule (a newer counter,
   mod 2^16) explains which counters it takes.
+- Done on 2026-11-07: the window text sensor (README: Window state), with the RC's automatic settings from the
+  manual in the YAML. Untested on air: an alarm or the automatic mode moving the window (only the estimate seen).
 - Done on 2026-11-07: #8 (the Last Frame text sensor has every whole frame, system ID and counter included).
 - Done on 2026-11-07: the resync (README, Resync): decoded, tested on air, and used when there is no counter or no
   answer. Only the station's packets change the counter block (the RC repeats its stale status before it

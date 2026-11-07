@@ -10,6 +10,12 @@ MULTI_CONF = True
 CONF_CC1101_ID = "cc1101_id"
 CONF_ELSNER_AREXA_ID = "elsner_arexa_id"
 CONF_PAIRING = "pairing"
+CONF_SETTINGS = "settings"
+CONF_OPEN_ABOVE = "open_above"
+CONF_OUTSIDE_LOCK = "outside_lock"
+CONF_WIND_ALARM = "wind_alarm"
+CONF_RAIN_ALARM = "rain_alarm"
+CONF_TRAVEL_TIME = "travel_time"
 
 elsner_arexa_ns = cg.esphome_ns.namespace("elsner_arexa")
 ElsnerArexa = elsner_arexa_ns.class_("ElsnerArexa", cg.Component)
@@ -32,6 +38,34 @@ def validate_pairing(value):
     return value
 
 
+def off_or(validator):
+    """off (a function switched off on the RC), or a value"""
+
+    def validate(value):
+        if value is False or (isinstance(value, str) and value.strip().lower() == "off"):
+            return None
+        return validator(value)
+
+    return validate
+
+
+# The settings made on the RC (its manual: "Einstellung der Automatik"), the station acts on them. Only for the window
+# text sensor: the component can't read or change them. The defaults are the factory settings.
+SETTINGS_SCHEMA = cv.Schema(
+    {
+        # A. the automatic mode opens above this inside temperature (the RC's) and closes 2 °C below it
+        cv.Optional(CONF_OPEN_ABOVE, default=25.0): off_or(cv.All(cv.temperature, cv.float_range(min=5))),
+        # B. below this outside temperature the automatic mode closes and keeps the window closed, until 2 °C above it
+        cv.Optional(CONF_OUTSIDE_LOCK, default=5.0): off_or(cv.All(cv.temperature, cv.float_range(min=-20))),
+        # C. above this wind speed (m/s) the window closes, also in manual mode, and the buttons are locked; held 5 min
+        cv.Optional(CONF_WIND_ALARM, default=4.0): off_or(
+            cv.All(cv.float_with_unit("wind speed", "(m/s)", optional_unit=True), cv.float_range(min=0, min_included=False))
+        ),
+        # D. the station's rain alarm closes the window, also in manual mode, and locks the buttons
+        cv.Optional(CONF_RAIN_ALARM, default=True): cv.boolean,
+    }
+)
+
 CONFIG_SCHEMA = cv.Schema(
     {
         cv.GenerateID(): cv.declare_id(ElsnerArexa),
@@ -45,6 +79,9 @@ CONFIG_SCHEMA = cv.Schema(
         # auto: learn it from the RC's packets. Or fix it (the value of the pairing text sensor), then the buttons
         # work as soon as any Arexa packet brought the counter.
         cv.Optional(CONF_PAIRING, default="auto"): validate_pairing,
+        cv.Optional(CONF_SETTINGS, default={}): SETTINGS_SCHEMA,
+        # the window's time from open to closed: a stop within it after a close leaves the window partly open
+        cv.Optional(CONF_TRAVEL_TIME, default="40s"): cv.positive_time_period_milliseconds,
     }
 ).extend(cv.COMPONENT_SCHEMA)
 
@@ -56,6 +93,12 @@ async def to_code(config):
     cg.add(var.set_radio(radio))
     cg.add(var.set_frequency(config[CONF_FREQUENCY]))
     cg.add(var.set_output_power(config[CONF_OUTPUT_POWER]))
+    settings = config[CONF_SETTINGS]
+    for key in (CONF_OPEN_ABOVE, CONF_OUTSIDE_LOCK, CONF_WIND_ALARM):
+        if settings[key] is not None:
+            cg.add(getattr(var, f"set_{key}")(settings[key]))
+    cg.add(var.set_rain_alarm(settings[CONF_RAIN_ALARM]))
+    cg.add(var.set_travel_time(config[CONF_TRAVEL_TIME]))
     if config[CONF_PAIRING] != "auto":
         pairing = [int(config[CONF_PAIRING][i : i + 2], 16) for i in range(0, len(config[CONF_PAIRING]), 2)]
         cg.add(var.set_fixed_pairing(pairing))

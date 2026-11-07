@@ -11,6 +11,7 @@ CONF_PAIRING = "pairing"
 CONF_STATION_RAW = "station_raw"
 CONF_LAST_COMMAND = "last_command"
 CONF_LAST_FRAME = "last_frame"
+CONF_WINDOW = "window"
 
 CONFIG_SCHEMA = cv.Schema(
     {
@@ -25,6 +26,9 @@ CONFIG_SCHEMA = cv.Schema(
         ),
         # the result of the last command sent (see the README, Sending and its result)
         cv.Optional(CONF_LAST_COMMAND): text_sensor.text_sensor_schema(icon="mdi:check-network"),
+        # the window: open, closed or unknown, from the commands (gateway and RC), the alarms and the automatic
+        # mode with the RC's settings (the hub's `settings:`); README: Window state
+        cv.Optional(CONF_WINDOW): text_sensor.text_sensor_schema(icon="mdi:window-open-variant"),
         # every Arexa frame as received, and my own sends, to keep them all in the history: "ok -62 cead93..."
         # (CRC matches; then the signal in dBm and the 38 bytes), "repaired ..." (one wrong bit), "bad ..." (wrong
         # CRC), "tx cead93..." (sent)
@@ -49,3 +53,6 @@ async def to_code(config):
     if CONF_LAST_FRAME in config:
         t = await text_sensor.new_text_sensor(config[CONF_LAST_FRAME])
         cg.add(hub.set_last_frame_text_sensor(t))
+    if CONF_WINDOW in config:
+        t = await text_sensor.new_text_sensor(config[CONF_WINDOW])
+        cg.add(hub.set_window_text_sensor(t))

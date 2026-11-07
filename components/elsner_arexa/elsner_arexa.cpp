@@ -107,6 +107,18 @@ void ElsnerArexa::setup() {
   }
   this->radio_->register_listener(this);
   this->start_listening();
+  // the window's last state survives a reboot
+  if (std::isnan(this->outside_lock_))
+    this->locked_ = 0;
+  this->window_pref_ = global_preferences->make_preference<int8_t>(fnv1_hash("elsner_arexa_window"));
+  int8_t window;
+  if (this->window_pref_.load(&window) && window >= 0 && window <= 1) {
+    this->window_ = window;
+#ifdef USE_TEXT_SENSOR
+    if (this->window_text_ != nullptr)
+      this->window_text_->publish_state(window ? "open" : "closed");
+#endif
+  }
   // The station answers the RC 14 ms after its packet, and the CC1101 driver listens again only when the main loop
   // has read the RC's packet. With the default 16 ms loop most station packets are missed.
   if (App.get_loop_interval() > 2)
@@ -286,9 +298,15 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
       this->rc_freq_offset_->publish_state(freq_offset / 1000.0f);
 #endif
     if (v[17] == 0x6a && v[18] == 0x30) {  // status: the RC's own temperature sensor
+      const float inside = static_cast<int16_t>(value16(22, 0x40, 0x80)) / 10.0f;
+      if (inside > this->open_above_)
+        this->warm_ = 1;
+      else if (inside < this->open_above_ - 2)
+        this->warm_ = 0;
+      this->window_update_();
 #ifdef USE_SENSOR
       if (this->inside_temperature_ != nullptr)
-        this->inside_temperature_->publish_state(static_cast<int16_t>(value16(22, 0x40, 0x80)) / 10.0f);
+        this->inside_temperature_->publish_state(inside);
       if (this->raw_inside_ != nullptr)
         this->raw_inside_->publish_state(v[22]);
 #endif
@@ -307,6 +325,7 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
     this->last_remote_ = cmd;
     this->last_remote_counter_ = counter;
     ESP_LOGD(TAG, "RC button: %s", COMMAND_NAMES[cmd]);
+    this->window_command_(cmd);
 #ifdef USE_EVENT
     if (this->remote_ != nullptr)
       this->remote_->trigger(COMMAND_NAMES[cmd]);
@@ -319,6 +338,18 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
     // 00/ff in bytes 31..35)
     if (v[31] != 0x30 || v[32] != 0x30)
       return;
+    const float outside = static_cast<int16_t>(value16(17, 0x9a, 0x34)) / 10.0f;
+    const float wind = value16(19, 0x68, 0xd0) / 10.0f;
+    if (outside < this->outside_lock_)
+      this->locked_ = 1;
+    else if (outside > this->outside_lock_ + 2)
+      this->locked_ = 0;
+    if (wind > this->wind_limit_) {
+      this->windy_ = true;
+      this->windy_ms_ = millis();
+    }
+    this->raining_ = u[21] < 0x50;    // 0x52 dry, 0x4e while the rain alarm holds
+    this->wind_flag_ = u[28] != 0x8b;  // 0x8b calm
 #ifdef USE_TEXT_SENSOR
     if (this->station_raw_ != nullptr) {
       char hex[3 * 19];
@@ -333,11 +364,11 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
     if (this->station_freq_offset_ != nullptr)
       this->station_freq_offset_->publish_state(freq_offset / 1000.0f);
     if (this->outside_temperature_ != nullptr)
-      this->outside_temperature_->publish_state(static_cast<int16_t>(value16(17, 0x9a, 0x34)) / 10.0f);
+      this->outside_temperature_->publish_state(outside);
     if (this->raw_outside_ != nullptr)
       this->raw_outside_->publish_state(v[17]);
     if (this->wind_ != nullptr)
-      this->wind_->publish_state(value16(19, 0x68, 0xd0) / 10.0f);
+      this->wind_->publish_state(wind);
     // about 1.05 lx per step (calibrated against the RC's klux display)
     const uint16_t bright = value16(22, 0x3c, 0x80);
     if (this->brightness_ != nullptr)
@@ -349,9 +380,9 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
 #endif
 #ifdef USE_BINARY_SENSOR
     if (this->rain_ != nullptr)
-      this->rain_->publish_state(u[21] < 0x50);  // 0x52 dry, 0x4e while the rain alarm holds
+      this->rain_->publish_state(this->raining_);
     if (this->wind_alarm_ != nullptr)
-      this->wind_alarm_->publish_state(u[28] != 0x8b);  // 0x8b calm
+      this->wind_alarm_->publish_state(this->wind_flag_);
 #endif
     this->publish_mode_(u[25]);
   }
@@ -416,6 +447,8 @@ void ElsnerArexa::finish_(const char *result) {
     ESP_LOGI(TAG, "%s: confirmed after %d send%s", COMMAND_NAMES[this->cmd_], this->sends_, this->sends_ == 1 ? "" : "s");
   else
     ESP_LOGW(TAG, "%s: %s", COMMAND_NAMES[this->cmd_], result);
+  if (strcmp(result, "confirmed") == 0)
+    this->window_command_(this->cmd_);
 #ifdef USE_TEXT_SENSOR
   if (this->last_command_ != nullptr)
     this->last_command_->publish_state(std::string(COMMAND_NAMES[this->cmd_]) + ": " + result);
@@ -482,6 +515,10 @@ void ElsnerArexa::new_send_() {
 void ElsnerArexa::publish_mode_(uint8_t mode) {
   if (mode != 0xb3 && mode != 0xbf)
     return;
+  // the station answers a command with its mode from before it: after an open, stop or close it is in manual mode
+  if (mode == 0xb3 || millis() - this->command_ms_ > 5000)
+    this->auto_mode_on_ = mode == 0xbf;
+  this->window_update_();
 #ifdef USE_BINARY_SENSOR
   if (this->auto_mode_ != nullptr)
     this->auto_mode_->publish_state(mode == 0xbf);
@@ -489,6 +526,73 @@ void ElsnerArexa::publish_mode_(uint8_t mode) {
 #ifdef USE_SWITCH
   if (this->auto_mode_switch_ != nullptr)
     this->auto_mode_switch_->publish_state(mode == 0xbf);
+#endif
+}
+
+// README: Window state. The station closes the window on a wind or rain alarm (if switched on in the RC's settings),
+// also in manual mode, and ignores the buttons meanwhile. The wind alarm holds 5 minutes after the last gust above
+// the limit; I see the wind only once a minute, so a short gust can close the window unseen.
+bool ElsnerArexa::alarm_() {
+  if (this->windy_ && millis() - this->windy_ms_ >= 5 * 60 * 1000)
+    this->windy_ = false;
+  return (this->rain_alarm_ && this->raining_) || (!std::isnan(this->wind_limit_) && (this->windy_ || this->wind_flag_));
+}
+
+// A confirmed open, stop or close, from the gateway or the RC. Each one puts the station in manual mode.
+void ElsnerArexa::window_command_(int cmd) {
+  if (cmd != CMD_OPEN && cmd != CMD_STOP && cmd != CMD_CLOSE)
+    return;
+  const uint32_t now = millis();
+  this->command_ms_ = now;
+  this->auto_mode_on_ = 0;
+  if (this->alarm_()) {
+    this->set_window_(0);
+    return;
+  }
+  if (cmd == CMD_STOP) {
+    // a stop while the window closes leaves it partly open; any other stop changes nothing
+    if (this->last_move_ == CMD_CLOSE && now - this->last_move_ms_ < this->travel_ms_)
+      this->set_window_(1);
+    this->last_move_ = CMD_STOP;
+    return;
+  }
+  const int8_t state = cmd == CMD_OPEN;
+  if (this->window_ != state) {  // a move (not a close when it is closed already)
+    this->last_move_ = cmd;
+    this->last_move_ms_ = now;
+  }
+  this->set_window_(state);
+}
+
+// After new values: the alarms, and in automatic mode the RC's settings A (open above the inside temperature, close
+// 2 °C below it) and B (closed below the outside temperature, until 2 °C above it).
+void ElsnerArexa::window_update_() {
+  if (this->alarm_()) {
+    this->set_window_(0);
+    return;
+  }
+  if (this->auto_mode_on_ != 1)
+    return;  // manual mode: only the buttons move it
+  if (this->locked_ == 1 || this->warm_ == 0)
+    this->set_window_(0);
+  else if (this->locked_ == 0 && this->warm_ == 1)
+    this->set_window_(1);
+  // else: not known yet (just started, between the two limits), or no temperature control: it stays as it is
+}
+
+void ElsnerArexa::set_window_(int8_t state) {
+  if (state == this->window_)
+    return;
+  ESP_LOGD(TAG, "Window: %s", state ? "open" : "closed");
+  if (this->window_ >= 0) {  // a move by the station; from unknown it may have been there already
+    this->last_move_ = state ? CMD_OPEN : CMD_CLOSE;
+    this->last_move_ms_ = millis();
+  }
+  this->window_ = state;
+  this->window_pref_.save(&state);
+#ifdef USE_TEXT_SENSOR
+  if (this->window_text_ != nullptr)
+    this->window_text_->publish_state(state ? "open" : "closed");
 #endif
 }
 
@@ -533,6 +637,9 @@ void ElsnerArexa::dump_config() {
                   this->rc_address_, this->station_address_, this->fixed_ ? "fixed" : "learned");
   else
     ESP_LOGCONFIG(TAG, "  RC not heard yet (it sends a status packet every minute)");
+  ESP_LOGCONFIG(TAG, "  RC settings: open above %.1f °C, outside lock %.1f °C, wind alarm %.1f m/s, rain alarm %s",
+                this->open_above_, this->outside_lock_, this->wind_limit_, YESNO(this->rain_alarm_));
+  ESP_LOGCONFIG(TAG, "  Travel time: %u ms", (unsigned) this->travel_ms_);
 }
 
 }  // namespace esphome::elsner_arexa

@@ -12,6 +12,7 @@ station that drives the window motor). With a CC1101 868 MHz module it gives you
 - **Sensors:** inside temperature (from the RC), outside temperature, wind, brightness, rain alarm, rain sensor,
   automatic or manual mode.
 - **An event** for every press on the real RC.
+- **The window's state** (open or closed), worked out from the commands, the alarms and the RC's automatic settings.
 
 Nothing has to be opened or re-paired: the component listens to your RC for up to a minute and then speaks with
 its system ID and addresses. The RC keeps working as before.
@@ -55,7 +56,7 @@ The full example with all sensors is in [examples/elsner-arexa.yaml](examples/el
 | `switch` | `auto_mode` (on: automatic, off: manual; it shows the station's mode) |
 | `button` | `open`, `stop`, `close`, `auto`, `manual` |
 | `event` | `remote` (event types `open`, `stop`, `close`, `auto`, `manual`; one event per press: the RC's repeats have the same counter) |
-| `text_sensor` | `pairing`: the pairing of the RC heard on the air; `station_raw`: the station's value bytes 17..35 (for working out new values); `last_command`: the result of the last command sent (see below); `last_frame`: every Arexa frame as received and every frame sent, raw (`ok -62 cead93...`, `repaired`, `bad` for a wrong CRC, `tx`), so the history keeps them all |
+| `text_sensor` | `pairing`: the pairing of the RC heard on the air; `station_raw`: the station's value bytes 17..35 (for working out new values); `last_command`: the result of the last command sent (see below); `last_frame`: every Arexa frame as received and every frame sent, raw (`ok -62 cead93...`, `repaired`, `bad` for a wrong CRC, `tx`), so the history keeps them all; `window`: `open` or `closed` (see Window state) |
 
 **Pairing:** by default (`pairing: auto`) the component learns your RC's system ID and the RC's and
 the station's addresses from the first RC status packet. The `pairing` text sensor shows what arrives, as 20 hex
@@ -85,6 +86,31 @@ are also logged as warnings.
 
 **Open, Stop and Close end automatic mode**, like on the RC: the station switches to manual (seen with Stop). The
 station closes the window on rain in both modes; automatic mode adds opening and closing by temperature.
+
+**Window state:** nothing reports the window's position, so the `window` text sensor works it out the way the
+station acts (the Arexa manual, "Einstellung der Automatik"). Put the RC's automatic settings into the hub (they are
+shown and changed on the RC: hold SET for 3 s; the component can't read them):
+
+```yaml
+elsner_arexa:
+  cc1101_id: radio_arexa
+  settings:              # the factory values; off switches one off, as on the RC
+    open_above: 25°C     # A. open above this inside temperature (the RC's), close 2 °C below it
+    outside_lock: 5°C    # B. below this outside temperature: closed, until 2 °C above it
+    wind_alarm: 4 m/s    # C. above this wind: closed, held 5 minutes
+    rain_alarm: true     # D. rain: closed
+  travel_time: 40s       # open to closed (a stop within it after a close leaves the window partly open)
+```
+
+- Open and close (from Home Assistant or the RC, once the station took them) set it; a stop within `travel_time`
+  after a close means partly open, so `open`. They also switch the station to manual mode.
+- A wind or rain alarm closes the window in both modes, and the station ignores the buttons until it ends.
+- In automatic mode, settings A and B decide. Between their two limits (or with A off) the window stays as it was.
+- The state survives a restart of the ESP. Until the first command or decision after a first start it is unknown.
+
+It is an estimate: the station measures the wind every few seconds but sends it once a minute, so a short gust can
+close the window unseen; and if the window is moved some other way (by hand, a power cut), it is wrong until the
+next command.
 
 **After a restart** the buttons work once the pairing is known: learned from an RC status packet (the RC sends one
 every minute), or fixed in the configuration. Without a counter heard yet, a command starts with a resync, so with a

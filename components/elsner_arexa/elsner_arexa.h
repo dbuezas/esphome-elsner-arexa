@@ -2,6 +2,7 @@
 
 #include "esphome/core/component.h"
 #include "esphome/core/helpers.h"
+#include "esphome/core/preferences.h"
 #include "esphome/components/cc1101/cc1101.h"
 #ifdef USE_SENSOR
 #include "esphome/components/sensor/sensor.h"
@@ -21,6 +22,7 @@
 #ifdef USE_SWITCH
 #include "esphome/components/switch/switch.h"
 #endif
+#include <cmath>
 #include <vector>
 
 namespace esphome::elsner_arexa {
@@ -38,6 +40,12 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
   void set_output_power(float power) { this->output_power_ = power; }
   // the pairing (bytes 8..16, optionally the counter's check byte) to use instead of learning it; see the README
   void set_fixed_pairing(const std::vector<uint8_t> &pairing);
+  // the RC's automatic settings (README: Window state); not set: switched off
+  void set_open_above(float t) { this->open_above_ = t; }
+  void set_outside_lock(float t) { this->outside_lock_ = t; }
+  void set_wind_alarm(float speed) { this->wind_limit_ = speed; }
+  void set_rain_alarm(bool on) { this->rain_alarm_ = on; }
+  void set_travel_time(uint32_t ms) { this->travel_ms_ = ms; }
 
   void setup() override;
   void loop() override;
@@ -85,6 +93,7 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
   void set_station_raw_text_sensor(text_sensor::TextSensor *s) { this->station_raw_ = s; }
   void set_last_command_text_sensor(text_sensor::TextSensor *s) { this->last_command_ = s; }
   void set_last_frame_text_sensor(text_sensor::TextSensor *s) { this->last_frame_ = s; }
+  void set_window_text_sensor(text_sensor::TextSensor *s) { this->window_text_ = s; }
 #endif
 
  protected:
@@ -96,6 +105,10 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
   void fix_gain_();
   void publish_frame_(const char *kind, float rssi, const uint8_t *c);
   void publish_mode_(uint8_t mode);
+  bool alarm_();
+  void window_command_(int cmd);
+  void window_update_();
+  void set_window_(int8_t state);
 
   cc1101::CC1101Component *radio_{nullptr};
   float frequency_{868.19e6f};
@@ -131,6 +144,25 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
   uint16_t n_{0};
   int counter_check_{-1};
 
+  // the window (README: Window state): -1 unknown, 0 closed, 1 open
+  float open_above_{NAN};
+  float outside_lock_{NAN};
+  float wind_limit_{NAN};
+  bool rain_alarm_{true};
+  uint32_t travel_ms_{40000};
+  int8_t window_{-1};
+  int8_t auto_mode_on_{-1};  // the station's mode: -1 not heard yet
+  int8_t warm_{-1};    // A: the inside temperature was above open_above and not yet 2 °C below it (-1: not known)
+  int8_t locked_{-1};  // B: the outside temperature was below outside_lock and not yet 2 °C above it
+  bool raining_{false};
+  bool wind_flag_{false};
+  bool windy_{false};  // C: the wind was above wind_alarm in the last 5 minutes
+  uint32_t windy_ms_{0};
+  uint32_t command_ms_{0};  // the last open, stop or close
+  int last_move_{-1};  // the last open or close (a command or the station's own), for a stop after it
+  uint32_t last_move_ms_{0};
+  ESPPreferenceObject window_pref_;
+
   int last_remote_{-1};
   int last_remote_counter_{-1};  // the counter of the last RC command
 
@@ -164,6 +196,7 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
   text_sensor::TextSensor *station_raw_{nullptr};
   text_sensor::TextSensor *last_command_{nullptr};
   text_sensor::TextSensor *last_frame_{nullptr};
+  text_sensor::TextSensor *window_text_{nullptr};
   std::string pairing_seen_;
 #endif
 };
