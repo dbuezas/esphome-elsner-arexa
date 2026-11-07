@@ -25,6 +25,7 @@ release). Ordered by priority.
 - Done on 2026-11-07 (later): the running sum for all values (rain no longer breaks the brightness), the counter
   as 16 bits with a per-system check byte (learned, or the 10th pairing byte), the station's rule (a newer counter,
   mod 2^16) explains which counters it takes.
+- Done on 2026-11-07: #8 (the Last Frame text sensor has every whole frame, system ID and counter included).
 - Done on 2026-11-07: the resync (README, Resync): decoded, tested on air, and used when there is no counter or no
   answer. Only the station's packets change the counter block (the RC repeats its stale status before it
   resyncs). The pairing check for typos. Station bytes 22, 23 (the brightness's low byte), 26 (a check byte of the
@@ -57,9 +58,6 @@ below 0 °C it is seen and works. To do: check on a hot day.
   syncs). In a miss the station packet arrives but its start (preamble, `ce`, `ad`) is broken and the radio locks on
   later inside it (measured with raw chips).
 
-### 8. Station Raw lacks the system ID
-Add bytes 8..16 (and the counter 5..7), or a separate text sensor, so foreign or broken packets are visible.
-
 ### 13. Station packets with wrong bits: solved (the AGC)
 About 40% of the station's packets came with wrong bits, at -64 dBm, 4 m away; the RC's never. Not the cause (each
 tested 4 to 12 hours alternating, 2026-11-04..06): ESP activity and WiFi (even WiFi off), the two 433 MHz radios
@@ -74,7 +72,7 @@ send (no SFRX), so a packet half received when we send makes the next one invali
 ## Low
 
 - The command list exists four times in an order that must match (now noted at each). Generate from one list?
-- Wind: one byte, so at most 25.5 m/s; what the station sends above that is unknown.
+- Wind: a 16-bit value like the temperature (README: Values), so above 25.5 m/s should just work; not seen yet.
 - #9 (RC presses de-duplicated by counter) is untested: press a button on the real RC and check one event per press.
 - The scrambler's 31 masks (README: Scrambling) follow a shift pattern but no short recurrence I found; a generator
   would replace the table.
