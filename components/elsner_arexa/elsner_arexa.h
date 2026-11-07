@@ -36,7 +36,7 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
   void set_radio(cc1101::CC1101Component *radio) { this->radio_ = radio; }
   void set_frequency(float frequency) { this->frequency_ = frequency; }
   void set_output_power(float power) { this->output_power_ = power; }
-  // the pairing (bytes 8..16) to use instead of learning it from the RC; see the README
+  // the pairing (bytes 8..16, optionally the counter's check byte) to use instead of learning it; see the README
   void set_fixed_pairing(const std::vector<uint8_t> &pairing);
 
   void setup() override;
@@ -110,9 +110,7 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
   bool resynced_{false};  // this command already did a resync
   int sends_{0};
   int copies_{0};  // copies of the current send so far
-  uint8_t sent_v5_{0};  // the counter of the current send
-  uint8_t sent_v7_{0};
-  uint8_t sent_k_{0};
+  uint16_t sent_n_{0};  // the counter of the current send
   uint32_t send_ms_{0};  // when the current send started
   bool answered_{false};  // the station answered some send of this command (for a mode command: with the old mode)
   std::vector<uint8_t> frame_;
@@ -125,13 +123,13 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
   uint8_t pairing_[9]{};  // values of bytes 8..16 of the RC's packets: system ID, addresses, device type
   uint8_t rc_address_{0};
   uint8_t station_address_{0};
-  // the packet counter of the last packet heard (RC or station)
-  int v5_{-1};
-  uint8_t v7_{0};
-  uint8_t k_{0};
+  // the counter (README: Counter): the current one, and the check byte of my system (-1: not known yet)
+  bool have_counter_{false};
+  uint16_t n_{0};
+  int counter_check_{-1};
 
   int last_remote_{-1};
-  int last_remote_counter_{-1};  // v7 << 8 | v5 of the last RC command
+  int last_remote_counter_{-1};  // the counter of the last RC command
 
 #ifdef USE_SENSOR
   sensor::Sensor *inside_temperature_{nullptr};

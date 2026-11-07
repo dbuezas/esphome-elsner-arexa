@@ -22,6 +22,9 @@ release). Ordered by priority.
 - Fixed on 2026-11-03: a send across `v5 = 00` kept the old `v7` and K, and the station ignored it (and every send
   after it until the RC resynced). Now `v7 + 2`, `K - 1`, as the RC does; tested with 140 Stop sends across a wrap.
 
+- Done on 2026-11-07 (later): the running sum for all values (rain no longer breaks the brightness), the counter
+  as 16 bits with a per-system check byte (learned, or the 10th pairing byte), the station's rule (a newer counter,
+  mod 2^16) explains which counters it takes.
 - Done on 2026-11-07: the resync (README, Resync): decoded, tested on air, and used when there is no counter or no
   answer. Only the station's packets change the counter block (the RC repeats its stale status before it
   resyncs). The pairing check for typos. Station bytes 22, 23 (the brightness's low byte), 26 (a check byte of the
@@ -34,10 +37,8 @@ release). Ordered by priority.
 ## High
 
 ### 5. Outside temperature above 25.5 °C is not seen yet
-Bytes 17..20 are one chain with the wind (README, Values): byte 19 = 2 * high - wind, so above 25.5 °C high = 1
-should show in the wind pair, and the component decodes it that way. Below 0 °C (high = -1) it is seen and works.
-A packet that fails the chain checks logs a warning with bytes 17..20 and publishes neither value. To do: check on
-a hot day.
+With the running sum (README: Values) the temperature is a plain 16-bit value, so above 25.5 °C should just work;
+below 0 °C it is seen and works. To do: check on a hot day.
 
 ## Medium
 
@@ -75,7 +76,5 @@ send (no SFRX), so a packet half received when we send makes the next one invali
 - The command list exists four times in an order that must match (now noted at each). Generate from one list?
 - Wind: one byte, so at most 25.5 m/s; what the station sends above that is unknown.
 - #9 (RC presses de-duplicated by counter) is untested: press a button on the real RC and check one event per press.
-- Which counter blocks the station takes is not fully clear: after a resync from the gateway it still answered the
-  RC's old block (and took a Stop on it), while after the replay test it ignored the RC's old block until the RC
-  resynced. The component follows the station's packets and resyncs when a command gets no answer, so it works
-  either way.
+- The scrambler's 31 masks (README: Scrambling) follow a shift pattern but no short recurrence I found; a generator
+  would replace the table.

@@ -58,12 +58,12 @@ The full example with all sensors is in [examples/elsner-arexa.yaml](examples/el
 | `text_sensor` | `pairing`: the pairing of the RC heard on the air; `station_raw`: the station's value bytes 17..35 (for working out new values); `last_command`: the result of the last command sent (see below) |
 
 **Pairing:** by default (`pairing: auto`) the component learns your RC's system ID and the RC's and
-the station's addresses from the first RC status packet. The `pairing` text sensor shows what arrives, as 18 hex
+the station's addresses from the first RC status packet. The `pairing` text sensor shows what arrives, as 20 hex
 digits (bytes 8 to 16 of the RC's packets: the system ID, the RC's address, the station's address and the device
-types). After that, only packets with this system ID (bytes 8, 9 and 13, 14) count, so a neighbour's Arexa does
-not feed its weather into the sensors or move the counter. To skip the learning, put that value into the hub, for example `pairing: 1a2b3c4d5e1a2b6f70` (made up: use yours;
-the system ID, digits 1..4, must come again in digits 11..14, which catches most typos).
-Then the buttons work right after a start, even without the RC (see After a restart).
+types, then the counter's check byte). After that, only packets with this system ID (bytes 8, 9 and 13, 14) count, so a neighbour's Arexa does
+not feed its weather into the sensors or move the counter. To skip the learning, put that value into the hub, for example `pairing: 1a2b3c4d5e1a2b6f7048` (made up: use
+yours; the system ID, digits 1..4, must come again in digits 11..14, which catches most typos). Then the buttons work right after a start, even without the RC
+(see After a restart).
 
 **Frequency:** cheap CC1101 modules are often 20 to 40 kHz off. Mine needs `frequency: 868.227MHz` to come out at
 868.19 MHz. If the buttons do nothing or only the RC's packets come in, try steps of 10 kHz between 868.15 and
@@ -80,7 +80,7 @@ send (it counts as done when an answer shows the new mode), and so do open, clos
 switch the station to manual: the second answer shows it). A damaged answer (the CRC does not match; a single wrong
 bit is repaired) also means one more send. The `last_command` text sensor shows the result, so an automation can alert:
 `stop: confirmed`, `stop: no answer after 4 sends`, `stop: no answer to a resync`, `auto: mode unchanged after 4 sends`,
-`stop: not sent, pairing not known yet`, or `open: replaced by stop` (a new command stops the one being sent). Failures
+`stop: not sent, pairing not known yet`, `stop: not sent, no packet heard yet` (a fixed pairing without the check byte), or `open: replaced by stop` (a new command stops the one being sent). Failures
 are also logged as warnings.
 
 **Open, Stop and Close end automatic mode**, like on the RC: the station switches to manual (seen with Stop). The
@@ -88,7 +88,7 @@ station closes the window on rain in both modes; automatic mode adds opening and
 
 **After a restart** the buttons work once the pairing is known: learned from an RC status packet (the RC sends one
 every minute), or fixed in the configuration. Without a counter heard yet, a command starts with a resync, so with a
-fixed `pairing` the buttons also work without the RC, for example to replace a broken one. (Automatic mode then
+fixed `pairing` (all 20 digits) the buttons also work without the RC, for example to replace a broken one. (Automatic mode then
 lacks the inside temperature, which only the RC measures.)
 
 **"err" on the RC display:** right after a command from Home Assistant, the RC's next exchange can show "err" for
@@ -102,8 +102,8 @@ The value scales come from my own RC display readings, so they are a first fit:
 | Value | Formula | Based on |
 |---|---|---|
 | inside temperature | bytes 22, 23 (see Protocol) | the RC cooled in a freezer and warmed up: every display step from -1 to 13 °C, plus 20 to 25 °C; a thermometer next to the RC agrees within 0.1 °C |
-| outside temperature | bytes 17..20 (see Protocol) | 30 readings, 7 to 11 °C; seen down to -0.7 °C |
-| brightness | bytes 22..24 (see Protocol), × 1.05 lx | 5 readings from 0 to 6.5 klux (the RC shows whole klux) |
+| outside temperature | bytes 17, 18 (see Protocol) | 30 readings, 7 to 11 °C; seen down to -0.7 °C |
+| brightness | bytes 22, 23 (see Protocol), × 1.05 lx | 5 readings from 0 to 6.5 klux (the RC shows whole klux) |
 | wind | bytes 19, 20 (see Protocol) | 3 readings: 0, 1 and 2 m/s (the RC shows whole m/s) |
 
 If you have more pairs (RC display, the `raw_*` sensors), please open an issue.
@@ -112,7 +112,10 @@ If you have more pairs (RC display, the `raw_*` sensors), please open an issue.
 
 I decoded the protocol with an RTL-SDR, starting from the rtl_433 decoder `elsner_solexa` (364), which knows the
 frame and the CRC. The Solexa (the shade version) uses the same radio protocol: my model also decodes its
-recordings in rtl_433_tests, so the buttons may work there too, but its sensor bytes are different.
+recordings in rtl_433_tests (the same commands, and its sensor packet differs only in bytes 19, 20), so the
+buttons may work there too. rtl_433's decoder describes the same scrambling differently (a bit transform plus a
+"rolling state"); its `spread_k(seed)` is the seed part of the running sum here. Other Elsner RF devices (Solexa
+II, Solexa Home, WS1, Remo remotes, RF-MSG-ST) use "Elsner RF" at 868.2 MHz too; I found no public decoding of them.
 
 Receiving: the chip decodes the Manchester itself, synced on the first two frame bytes `ce ad` (the preamble is
 too short to fix the chip phase; the sync word does). The 36 bytes after it, with the CRC, fit the 64-byte FIFO.
@@ -167,98 +170,87 @@ So `value[k] = c[k] - 2 * c[k-1] - (parity(seed & mask[k]) ^ inv[k])`. To build 
 
 ### Values
 
+The descrambled bytes `v[k]` hold the header as is, but numbers in a second, simpler form: a running sum.
+
 | Bytes | Content |
 |---|---|
-| 5..7 | packet counter: `v5` counts down (the RC and the station share it), `v6 = K - 2 * v5`, `v7` changes rarely (K belongs to it). When `v5` reaches `00`, a new block starts: `v7 + 2` and `K - 1` (seen: `01 17` K `70`, then `00 19` K `6f`, `ff 19` K `6f`). Every block follows `K & 7f = (7b - v7 / 2) & 7f` with `v7` odd. After an "err" the RC resyncs to a new block (see Resync). The station only takes a command whose counter is newer than the last one. |
+| 5..7 | the counter (below) |
 | 8, 9 | system ID (set by the teach-in), repeated in 13, 14 |
 | 10 | sender address |
 | 15 | receiver address |
 | 11, 12, 16 | device type |
-| 17..19 | RC: the command (below). Station: the measurements start here. |
-| 20.. | filler `30` where nothing is sent |
+| 17.. | the command (RC) or the measurements (station), as a running sum (below) |
 
-RC commands (bytes 17, 18, 19), the same on the Solexa recordings:
+### Counter
 
-| Command | 17 | 18 | 19 |
-|---|---|---|---|
-| status (once a minute) | 6a | 30 | 30 |
-| open | 25 | ba | 30 |
-| stop | 27 | b6 | 30 |
-| close | 36 | 98 | 30 |
-| automatic mode | 6a | 1f | 52 |
-| manual mode | 6a | 13 | 6a |
+`n = k << 8 | (v5 - 1)` with `k = v6 + 2 * v5`: 16 bits, counting down by one per packet (the RC's own wraps:
+`ae00`, `adff`, `adfe`). Byte 7 is a check: `v7 + 2 * k` is the same in every packet of a system (`f7` on mine, `48`
+on the Solexa of rtl_433's recordings). The station takes a command whose counter is newer than its last one: lower,
+mod 2^16 (so up to 32767 steps ahead). That also covers the RC after a command from the gateway: its next status has
+an older counter, the station ignores it, the RC shows "err" and resyncs (below). To send:
+`v5 = (n & ff) + 1`, `v6 = k - 2 * v5`, `v7 = check - 2 * k`.
 
-Measurements (Arexa; the Solexa's sensor has a different layout):
+### Running sum
 
-| Sender | Byte | Content |
+From byte 17 on, `u[17] = v[17]` and `u[k] = v[k] + 2 * u[k-1]`. Then every value is a plain number: a 16-bit value
+is `(b0 - u[k]) | (b1 - u[k+1]) << 8` with these bases (in the raw `v`, every byte after a value looked like a check
+byte `constant - 2 * value`: that was this sum).
+
+| Sender | Bytes (`u`) | Content |
 |---|---|---|
-| RC status | 22, 23 | inside temperature (below) |
-| station | 17..20 | outside temperature and wind (below) |
-| station | 21 | rain alarm: `b2` dry, `ae` wet |
-| station | 22..24 | brightness (below) |
-| station | 25 | mode: `b3` manual, `bf` automatic; byte 26 = `b2 - 2 * v25` |
-| station | 28 | wind flag: `27` calm |
-| station | 29 | rain sensor reading: `a6` dry, lower = wetter |
-| station | 31..35 | `30` in a status packet (`00`/`ff` in the start-up packets after a battery change) |
-| station | 27, 30 | not decoded: `4e` and `58` in all 1189 packets so far |
+| RC | 17, 18 | command: `25 04` open, `27 04` stop, `36 04` close, `6a f3` automatic mode, `6a e7` manual mode, `6a 04` status (once a minute) |
+| RC status | 22, 23 | inside temperature in 0.1 °C, signed, bases `40 80` |
+| station | 17, 18 | outside temperature in 0.1 °C, signed, bases `9a 34` |
+| station | 19, 20 | wind in 0.1 m/s, bases `68 d0` |
+| station | 21 | rain alarm: `52` dry, `4e` wet (byte 26 the same: `b2`, `ae`) |
+| station | 22, 23 | brightness, about 1.05 lx per step, bases `3c 80`; byte 24 `00` |
+| station | 25 | mode: `b3` manual, `bf` automatic |
+| station | 28 | wind flag: `8b` calm |
+| station | 29 | rain sensor reading: `bc` dry, lower = wetter |
+| station | 27 | not decoded: `b2` in all packets so far |
+| both | rest | filler: `d0` (`30` in `v`) |
 
-The values are chains of bytes, each holding a constant minus twice the one before (so each also checks the one
-before).
+The RC sends the commands as `v` (bytes 17..19, also on the Solexa): `25 ba 30` open, `27 b6 30` stop, `36 98 30`
+close, `6a 1f 52` automatic, `6a 13 6a` manual, `6a 30 30` status. A start-up packet after a battery change has
+`00`/`ff` in bytes 31..35 instead of the filler.
 
-Inside temperature (RC), in tenths of a degree = `256 * high + low`: byte 22 = `168 - low`, byte 23 =
-`2 * low + sign`, byte 24 = `d0 + 2 * high` (`d0` above 0 °C, `ce` below). Checked from -1 to 25 °C.
+Checked on a week of station packets (1189, all decode; seen from -0.7 to 12.4 °C), the RC from -1 to 25 °C, and
+on rtl_433's Solexa recordings: the same commands, the RC's inside temperature with the same bases (20.6 °C), and
+the station's packet the same except bytes 19, 20 (the Solexa's sensor has no wind there).
 
-Outside temperature and wind (station), tenths of a degree = `256 * high + low` and wind in 0.1 m/s:
-
-| Byte | Value |
-|---|---|
-| 17 | `154 - low` |
-| 18 | `2 * low + sign` (sign: high is negative) |
-| 19 | `2 * high - wind` |
-| 20 | `2 * wind` |
-
-Above 0 °C high is 0 and byte 19 is just `-wind`; below 0 °C high is -1 (seen down to -0.7 °C: `9f f7 fe 00`, and
-with wind `9d fb ee 20`, -0.3 °C and 1.6 m/s). Above 25.5 °C high should be 1, which only the wind pair shows (not
-seen yet). All 1189 packets of a week pass these checks.
-
-Brightness (station) = `256 * high + low`, about 1.05 lx per step: byte 22 = `98 - low`, byte 23 =
-`8 + 2 * low - high`, byte 24 = `2 * high` (so bit 7 of high only shows in byte 23). 0 at night, and it rises
-smoothly through dawn. Steps of 1.05 lx come from the old fit of byte 24 alone (135 lx per step).
+In `v` this looked like a different formula for each value (a sign bit in byte 18, the temperature's high part in
+the wind byte, bit 7 of the brightness only in byte 23), and a value that changed (the rain alarm) broke the next
+one (the brightness while it rained).
 
 ### Resync
 
 When the RC's counter is stale (it got an "err", for example after the gateway sent commands), it picks a new
-counter block at random and announces it. The station acknowledges, and both continue counting down from there.
-Nothing in it is secret: the request names the new block in clear.
+counter at random and announces it. The station answers, and both count down from there. Nothing in it is secret:
+the request names the new counter in clear.
 
 | Bytes | Request (RC) | Answer (station) |
 |---|---|---|
-| 5..7 | the new block: `v5` and `v7` random, `v7` odd, `K & 7f = (7b - v7 / 2) & 7f`, bit 7 of K random | the same block |
+| 5..7 | the new counter (any value; byte 7 with the system's check) | the same |
 | 10, 15 | RC, station address | station, RC address |
 | 11, 12 | `82 ff` | `4d 01` |
 | 16 | `2 * seed + 53 + p` | `2 * seed + 87 + p` |
 | 17..35 | one bit per byte (`00` = 0, `ff` = 1) | the same, its own bits |
 
 Bits 17..31 are a random tag. The rest follows from it: `b32 = b17 ^ b31`, `b33 = b32 ^ b18`, `b34 = b33 ^ b19`,
-`b35 = b34 ^ b20`, and `p = b30 ^ b31 ^ 1`. The answer's tag is new, not a copy of the request's. The station does not check the tag: it also answered requests
-with a wrong check bit.
+`b35 = b34 ^ b20`, and `p = b30 ^ b31 ^ 1`. The answer's tag is new, not a copy of the request's. The station does
+not check the tag: it also answered requests with a wrong check bit.
 
-This model rebuilds all 59 recorded requests bit for bit from the block, the seed and the tag. In 59 of 59, the
-RC's next packets continue from the block it announced. All 2594 blocks I have seen follow the block rule (2564;
-the other 30 are corrupted frames).
+This model rebuilds all 59 recorded requests bit for bit from the counter, the seed and the tag; in all 59 the RC's
+next packets continue from the counter it announced.
 
 Tested by sending requests from the gateway (2026-11-07):
 
 - A recorded request, replayed as is: answered.
 - The same with a new seed, or a new tag (check bits computed): answered.
-- Fully made-up requests (block, seed, tag) that follow the rules: answered. A Stop on such a block was confirmed.
-- Made-up requests with a wrong check bit (`b35`, or `p` in byte 16): answered.
-- Blocks that break the block rule (`v7` even, or the wrong K): no answer, 3 tries each.
+- Made-up requests (counter, seed, tag): answered, also with a wrong check bit (`b35`, or `p` in byte 16). A Stop on
+  such a counter was confirmed.
+- Requests with a wrong counter check (byte 7): no answer, 3 tries each.
 
-The component uses this: without a counter, or when a command gets no answer at all, it announces a new block and
-sends the command on it.
-
-The station keeps answering the RC's old block after a resync from the gateway too (a Stop on it was confirmed), so
-which blocks it takes is not fully clear yet. The component follows the station: only the station's packets change
-its block.
-
+The component uses this: without a counter (after a start), or when no send of a command is answered, it announces
+a random counter and sends the command on it. A resync can put the station's counter behind the RC's: then the
+station takes the RC's next status (newer), and the RC needs no resync.

@@ -16,12 +16,13 @@ ElsnerArexa = elsner_arexa_ns.class_("ElsnerArexa", cg.Component)
 
 
 def validate_pairing(value):
-    """auto, or the 18 hex digits the pairing text sensor shows (bytes 8..16 of the RC's packets)"""
+    """auto, or the 20 hex digits the pairing text sensor shows (bytes 8..16 of the RC's packets and the counter's
+    check byte; 18 digits without the check byte also work, but then the first command waits for a packet)"""
     value = cv.string(value).strip().lower()
     if value == "auto":
         return value
-    if len(value) != 18 or any(ch not in "0123456789abcdef" for ch in value):
-        raise cv.Invalid("pairing must be 'auto' or 18 hex digits, like the pairing text sensor shows")
+    if len(value) not in (18, 20) or any(ch not in "0123456789abcdef" for ch in value):
+        raise cv.Invalid("pairing must be 'auto' or 20 hex digits, like the pairing text sensor shows")
     # every packet has the system ID twice: bytes 8, 9 and 13, 14
     if value[0:4] != value[10:14]:
         raise cv.Invalid(
@@ -56,5 +57,5 @@ async def to_code(config):
     cg.add(var.set_frequency(config[CONF_FREQUENCY]))
     cg.add(var.set_output_power(config[CONF_OUTPUT_POWER]))
     if config[CONF_PAIRING] != "auto":
-        pairing = [int(config[CONF_PAIRING][i : i + 2], 16) for i in range(0, 18, 2)]
+        pairing = [int(config[CONF_PAIRING][i : i + 2], 16) for i in range(0, len(config[CONF_PAIRING]), 2)]
         cg.add(var.set_fixed_pairing(pairing))

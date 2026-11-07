@@ -14,7 +14,7 @@ CONF_LAST_COMMAND = "last_command"
 CONFIG_SCHEMA = cv.Schema(
     {
         cv.GenerateID(CONF_ELSNER_AREXA_ID): cv.use_id(ElsnerArexa),
-        # the pairing of the RC heard on the air (18 hex digits); usable as `pairing:` in the hub
+        # the pairing of the RC heard on the air (20 hex digits); usable as `pairing:` in the hub
         cv.Optional(CONF_PAIRING): text_sensor.text_sensor_schema(
             icon="mdi:identifier", entity_category=ENTITY_CATEGORY_DIAGNOSTIC
         ),
