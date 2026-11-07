@@ -203,7 +203,7 @@ A temperature is two bytes `a, b` in tenths of a degree: `low = (base - a) & 0xf
 `tenths = low - 256 * sign`. `base` is 168 for the RC's inside sensor and 154 for the station. The RC also sends the
 high byte in byte 24 (`d0 + 2 * high`: `d0` above 0 °C, `ce` below), so the inside has no range limit. Checked from
 -1 to 25 °C inside. The station has no such byte: with the sign bit alone, its range would be -25.6 to +25.5 °C,
-so something else must change above 25.5 °C (not seen yet), and its sign is not seen yet either. Other value bytes are followed by one that holds about `constant - 2 × value` in the same way.
+so something else must change above 25.5 °C (not seen yet), and below 0 °C it works as for the RC (seen down to -0.7 °C). Other value bytes are followed by one that holds about `constant - 2 × value` in the same way.
 
 ### Resync
 

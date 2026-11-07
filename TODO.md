@@ -69,8 +69,6 @@ send (no SFRX), so a packet half received when we send makes the next one invali
 - The command list exists four times in an order that must match (now noted at each). Generate from one list?
 - `validate_pairing`: check that bytes 8, 9 equal 13, 14, to catch a typo.
 - Wind: one byte, so at most 25.5 m/s; what the station sends above that is unknown.
-- Outside temperature below 0 °C not seen yet (down to 0.0 so far: `9a 00`). If the station encodes it otherwise,
-  the pair check fails and the log shows the bytes.
 - #9 (RC presses de-duplicated by counter) is untested: press a button on the real RC and check one event per press.
 - A CRC-ok packet with another `v7` always replaces the counter, so a late packet of an older block could roll it
   back (rare, heals with the RC's next resync). A resync picks a random block (README, Resync), so "newer" only holds within a block: e.g. accept another `v7` only
