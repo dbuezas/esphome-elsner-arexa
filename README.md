@@ -94,6 +94,7 @@ shown and changed on the RC: hold SET for 3 s; the component can't read them):
 ```yaml
 elsner_arexa:
   cc1101_id: radio_arexa
+  # copy them from the RC: hold SET for 3 s while it shows the temperatures or the weather values (SET steps through them)
   settings:              # the factory values; off switches one off, as on the RC
     open_above: 25°C     # A. open above this inside temperature (the RC's), close 2 °C below it
     outside_lock: 5°C    # B. below this outside temperature: closed, until 2 °C above it

@@ -37,7 +37,8 @@ elsner_arexa:
   cc1101_id: radio_arexa
   # frequency: 868.19MHz  # 868.19 MHz + your module's error (cheap modules: +-40 kHz)
   # pairing: auto         # or the 20 hex digits of the "Arexa Pairing" text sensor, to skip the learning
-  # the RC's automatic settings, for the window text sensor (README: Window state); these are the factory values
+  # the RC's automatic settings, for the window text sensor (README: Window state); these are the factory values.
+  # Copy yours from the RC: hold SET for 3 s while it shows the temperatures or the weather values
   settings:
     open_above: 25°C
     outside_lock: 5°C

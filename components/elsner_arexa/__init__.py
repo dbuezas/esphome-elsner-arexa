@@ -50,7 +50,8 @@ def off_or(validator):
 
 
 # The settings made on the RC (its manual: "Einstellung der Automatik"), the station acts on them. Only for the window
-# text sensor: the component can't read or change them. The defaults are the factory settings.
+# text sensor: the component can't read or change them. The defaults are the factory settings. To see them on the RC:
+# hold SET for 3 s while it shows the temperatures or the weather values.
 SETTINGS_SCHEMA = cv.Schema(
     {
         # A. the automatic mode opens above this inside temperature (the RC's) and closes 2 °C below it
