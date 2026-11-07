@@ -173,7 +173,9 @@ void ElsnerArexa::loop() {
   else if (t >= 300 && this->sends_ < 4)
     this->new_send_();
   else if (t >= 300)
-    this->finish_(this->answered_ ? "mode unchanged after 4 sends" : "no answer after 4 sends");
+    this->finish_(!this->answered_                                       ? "no answer after 4 sends"
+                  : this->cmd_ == CMD_AUTO || this->cmd_ == CMD_MANUAL ? "mode unchanged after 4 sends"
+                                                                         : "confirmed");
 }
 
 void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_offset) {
@@ -341,13 +343,15 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
   }
 }
 
-// The answer to the command being sent carries its counter. A mode command is done when the answer has the new mode:
-// the station answers with its state from before the command, so that takes a second send.
+// The answer to the command being sent carries its counter. The station answers with its state from before the
+// command, so a second send fetches the new mode: a mode command is done when an answer has the new mode, and open,
+// close or stop in automatic mode (which switch the station to manual) send once more after the first answer.
 void ElsnerArexa::check_answer_(const uint8_t *v) {
   if (this->cmd_ < 0 || v[5] != this->sent_v5_ || v[7] != this->sent_v7_)
     return;
   const bool mode = this->cmd_ == CMD_AUTO || this->cmd_ == CMD_MANUAL;
-  if (!mode || v[25] == (this->cmd_ == CMD_AUTO ? 0xbf : 0xb3)) {
+  const bool done = mode ? v[25] == (this->cmd_ == CMD_AUTO ? 0xbf : 0xb3) : this->answered_ || v[25] != 0xbf;
+  if (done) {
     this->finish_("confirmed");
   } else {
     this->answered_ = true;

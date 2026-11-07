@@ -73,11 +73,12 @@ Then the buttons work as soon as any packet with that system ID (RC or station) 
 
 **Sending and its result:** a command goes out as 3 copies 30 ms apart. The station answers the first copy it
 hears, 14 ms later, with the command's counter. Without that answer, I send again with a new counter every 300 ms,
-at most 4 times. A mode command needs one more send, because the station answers with its mode from before the
-command: it counts as done when an answer shows the new mode. Station answers are often damaged (the CRC does not
-match, and only packets with a matching CRC count), so a second send happens now and then. The `last_command` text sensor shows the result, so an automation can alert:
+at most 4 times. The station answers with its state from before the command, so a mode command needs one more
+send (it counts as done when an answer shows the new mode), and so do open, close and stop in automatic mode (they
+switch the station to manual: the second answer shows it). A damaged answer (the CRC does not match; a single wrong
+bit is repaired) also means one more send. The `last_command` text sensor shows the result, so an automation can alert:
 `stop: confirmed`, `stop: no answer after 4 sends`, `auto: mode unchanged after 4 sends`,
-`stop: not sent, RC not heard yet`, or `open: replaced by stop` (a new command stops the one being sent). Failures
+`stop: not sent, no counter heard yet`, or `open: replaced by stop` (a new command stops the one being sent). Failures
 are also logged as warnings.
 
 **Open, Stop and Close end automatic mode**, like on the RC: the station switches to manual (seen with Stop). The
