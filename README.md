@@ -220,7 +220,8 @@ Nothing in it is secret: the request names the new block in clear.
 | 17..35 | one bit per byte (`00` = 0, `ff` = 1) | the same, its own bits |
 
 Bits 17..31 are a random tag. The rest follows from it: `b32 = b17 ^ b31`, `b33 = b32 ^ b18`, `b34 = b33 ^ b19`,
-`b35 = b34 ^ b20`, and `p = b30 ^ b31 ^ 1`. The answer's tag is new, not a copy of the request's.
+`b35 = b34 ^ b20`, and `p = b30 ^ b31 ^ 1`. The answer's tag is new, not a copy of the request's. The station does not check the tag: it also answered requests
+with a wrong check bit.
 
 This model rebuilds all 59 recorded requests bit for bit from the block, the seed and the tag. In 59 of 59, the
 RC's next packets continue from the block it announced. All 2594 blocks I have seen follow the block rule (2564;
@@ -231,9 +232,8 @@ Tested by sending requests from the gateway (2026-11-07):
 - A recorded request, replayed as is: answered.
 - The same with a new seed, or a new tag (check bits computed): answered.
 - Fully made-up requests (block, seed, tag) that follow the rules: answered. A Stop on such a block was confirmed.
+- Made-up requests with a wrong check bit (`b35`, or `p` in byte 16): answered.
 - Blocks that break the block rule (`v7` even, or the wrong K): no answer, 3 tries each.
-
-Not tested yet: whether the station checks the tag's check bits.
 
 So the gateway could resync the station by itself, for example to replace a broken RC.
 
