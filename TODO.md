@@ -73,4 +73,5 @@ send (no SFRX), so a packet half received when we send makes the next one invali
   the pair check fails and the log shows the bytes.
 - #9 (RC presses de-duplicated by counter) is untested: press a button on the real RC and check one event per press.
 - A CRC-ok packet with another `v7` always replaces the counter, so a late packet of an older block could roll it
-  back (rare, heals with the RC's next resync). Accept only a newer `v7`, once it is clear how `v7` changes on a resync.
+  back (rare, heals with the RC's next resync). A resync picks a random block (README, Resync), so "newer" only holds within a block: e.g. accept another `v7` only
+  from a station answer to an `82 ff`, or from two packets in a row.

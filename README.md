@@ -165,7 +165,7 @@ So `value[k] = c[k] - 2 * c[k-1] - (parity(seed & mask[k]) ^ inv[k])`. To build 
 
 | Bytes | Content |
 |---|---|
-| 5..7 | packet counter: `v5` counts down (the RC and the station share it), `v6 = K - 2 * v5`, `v7` changes rarely (K belongs to it). When `v5` reaches `00`, a new block starts: `v7 + 2` and `K - 1` (seen: `01 17` K `70`, then `00 19` K `6f`, `ff 19` K `6f`). After an "err" the RC resyncs with a new `v7` and K. The station only takes a command whose counter is newer than the last one. |
+| 5..7 | packet counter: `v5` counts down (the RC and the station share it), `v6 = K - 2 * v5`, `v7` changes rarely (K belongs to it). When `v5` reaches `00`, a new block starts: `v7 + 2` and `K - 1` (seen: `01 17` K `70`, then `00 19` K `6f`, `ff 19` K `6f`). Every block follows `K & 7f = (7b - v7 / 2) & 7f` with `v7` odd. After an "err" the RC resyncs to a new block (see Resync). The station only takes a command whose counter is newer than the last one. |
 | 8, 9 | system ID (set by the teach-in), repeated in 13, 14 |
 | 10 | sender address |
 | 15 | receiver address |
@@ -204,3 +204,36 @@ A temperature is two bytes `a, b` in tenths of a degree: `low = (base - a) & 0xf
 high byte in byte 24 (`d0 + 2 * high`: `d0` above 0 °C, `ce` below), so the inside has no range limit. Checked from
 -1 to 25 °C inside. The station has no such byte: with the sign bit alone, its range would be -25.6 to +25.5 °C,
 so something else must change above 25.5 °C (not seen yet), and its sign is not seen yet either. Other value bytes are followed by one that holds about `constant - 2 × value` in the same way.
+
+### Resync
+
+When the RC's counter is stale (it got an "err", for example after the gateway sent commands), it picks a new
+counter block at random and announces it. The station acknowledges, and both continue counting down from there.
+Nothing in it is secret: the request names the new block in clear.
+
+| Bytes | Request (RC) | Answer (station) |
+|---|---|---|
+| 5..7 | the new block: `v5` and `v7` random, `v7` odd, `K & 7f = (7b - v7 / 2) & 7f`, bit 7 of K random | the same block |
+| 10, 15 | RC, station address | station, RC address |
+| 11, 12 | `82 ff` | `4d 01` |
+| 16 | `2 * seed + 53 + p` | `2 * seed + 87 + p` |
+| 17..35 | one bit per byte (`00` = 0, `ff` = 1) | the same, its own bits |
+
+Bits 17..31 are a random tag. The rest follows from it: `b32 = b17 ^ b31`, `b33 = b32 ^ b18`, `b34 = b33 ^ b19`,
+`b35 = b34 ^ b20`, and `p = b30 ^ b31 ^ 1`. The answer's tag is new, not a copy of the request's.
+
+This model rebuilds all 59 recorded requests bit for bit from the block, the seed and the tag. In 59 of 59, the
+RC's next packets continue from the block it announced. All 2594 blocks I have seen follow the block rule (2564;
+the other 30 are corrupted frames).
+
+Tested by sending requests from the gateway (2026-11-07):
+
+- A recorded request, replayed as is: answered.
+- The same with a new seed, or a new tag (check bits computed): answered.
+- Fully made-up requests (block, seed, tag) that follow the rules: answered. A Stop on such a block was confirmed.
+- Blocks that break the block rule (`v7` even, or the wrong K): no answer, 3 tries each.
+
+Not tested yet: whether the station checks the tag's check bits.
+
+So the gateway could resync the station by itself, for example to replace a broken RC.
+
