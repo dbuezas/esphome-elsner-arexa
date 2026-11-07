@@ -84,6 +84,7 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
   void set_pairing_text_sensor(text_sensor::TextSensor *s) { this->pairing_text_ = s; }
   void set_station_raw_text_sensor(text_sensor::TextSensor *s) { this->station_raw_ = s; }
   void set_last_command_text_sensor(text_sensor::TextSensor *s) { this->last_command_ = s; }
+  void set_last_frame_text_sensor(text_sensor::TextSensor *s) { this->last_frame_ = s; }
 #endif
 
  protected:
@@ -93,6 +94,7 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
   void finish_(const char *result);
   void check_answer_(const uint8_t *v);
   void fix_gain_();
+  void publish_frame_(const char *kind, float rssi, const uint8_t *c);
 
   cc1101::CC1101Component *radio_{nullptr};
   float frequency_{868.19e6f};
@@ -160,6 +162,7 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
   text_sensor::TextSensor *pairing_text_{nullptr};
   text_sensor::TextSensor *station_raw_{nullptr};
   text_sensor::TextSensor *last_command_{nullptr};
+  text_sensor::TextSensor *last_frame_{nullptr};
   std::string pairing_seen_;
 #endif
 };

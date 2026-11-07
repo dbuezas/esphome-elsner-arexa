@@ -3,6 +3,7 @@
 #include "esphome/core/hal.h"
 #include "esphome/core/application.h"
 #include <algorithm>
+#include <cmath>
 
 namespace esphome::elsner_arexa {
 
@@ -192,13 +193,18 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
     return;
   uint8_t c[N] = {HEADER[0], HEADER[1]};
   std::copy(x.begin(), x.end(), c + 2);
+  uint8_t received[N];
+  std::copy(c, c + N, received);
   bool fixed;
   if (!crc_check_and_fix(c, &fixed) || c[2] != HEADER[2] || c[3] != HEADER[3]) {
     // noise often matches the sync word (about once a second); with the rest of the header too it is an Arexa packet
-    if (c[2] == HEADER[2] && c[3] == HEADER[3])
+    if (c[2] == HEADER[2] && c[3] == HEADER[3]) {
       ESP_LOGD(TAG, "Packet with a wrong CRC, %.0f dBm: %s", rssi, format_hex(c, N).c_str());
+      this->publish_frame_("bad", rssi, received);
+    }
     return;
   }
+  this->publish_frame_(fixed ? "repaired" : "ok", rssi, received);
   const uint8_t seed = c[4];
   uint8_t v[36] = {0};
   for (int k = 5; k < 36; k++)
@@ -471,12 +477,27 @@ void ElsnerArexa::new_send_() {
   const uint16_t crc = crc16(c.data(), 36);
   c.push_back(crc >> 8);
   c.push_back(crc & 0xff);
+  this->publish_frame_("tx", NAN, c.data());
   this->sends_++;
   this->copies_ = 0;
   this->send_ms_ = millis();
   ESP_LOGD(TAG, "Sending %s with counter %04x (send %d)", this->resync_ ? "a resync" : COMMAND_NAMES[this->cmd_],
            this->sent_n_, this->sends_);
   this->transmit_();
+}
+
+// For the last frame text sensor: "ok -62 cead93...", "tx cead93..." (see text_sensor.py)
+void ElsnerArexa::publish_frame_(const char *kind, float rssi, const uint8_t *c) {
+#ifdef USE_TEXT_SENSOR
+  if (this->last_frame_ == nullptr)
+    return;
+  char text[16 + 2 * N + 1];
+  int len = std::isnan(rssi) ? snprintf(text, sizeof(text), "%s ", kind)
+                             : snprintf(text, sizeof(text), "%s %.0f ", kind, rssi);
+  for (int i = 0; i < N; i++)
+    len += snprintf(text + len, sizeof(text) - len, "%02x", c[i]);
+  this->last_frame_->publish_state(text);
+#endif
 }
 
 // One copy of the frame. The chip sends it: packet mode with its own Manchester. The sync word 00 0a: the zero byte

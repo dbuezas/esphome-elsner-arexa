@@ -55,7 +55,7 @@ The full example with all sensors is in [examples/elsner-arexa.yaml](examples/el
 | `switch` | `auto_mode` (on: automatic, off: manual; it shows the station's mode) |
 | `button` | `open`, `stop`, `close`, `auto`, `manual` |
 | `event` | `remote` (event types `open`, `stop`, `close`, `auto`, `manual`; one event per press: the RC's repeats have the same counter) |
-| `text_sensor` | `pairing`: the pairing of the RC heard on the air; `station_raw`: the station's value bytes 17..35 (for working out new values); `last_command`: the result of the last command sent (see below) |
+| `text_sensor` | `pairing`: the pairing of the RC heard on the air; `station_raw`: the station's value bytes 17..35 (for working out new values); `last_command`: the result of the last command sent (see below); `last_frame`: every Arexa frame as received and every frame sent, raw (`ok -62 cead93...`, `repaired`, `bad` for a wrong CRC, `tx`), so the history keeps them all |
 
 **Pairing:** by default (`pairing: auto`) the component learns your RC's system ID and the RC's and
 the station's addresses from the first RC status packet. The `pairing` text sensor shows what arrives, as 20 hex

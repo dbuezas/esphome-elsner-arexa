@@ -10,6 +10,7 @@ DEPENDENCIES = ["elsner_arexa"]
 CONF_PAIRING = "pairing"
 CONF_STATION_RAW = "station_raw"
 CONF_LAST_COMMAND = "last_command"
+CONF_LAST_FRAME = "last_frame"
 
 CONFIG_SCHEMA = cv.Schema(
     {
@@ -22,9 +23,14 @@ CONFIG_SCHEMA = cv.Schema(
         cv.Optional(CONF_STATION_RAW): text_sensor.text_sensor_schema(
             icon="mdi:hexadecimal", entity_category=ENTITY_CATEGORY_DIAGNOSTIC
         ),
-        # the result of the last command sent: "open: confirmed", "open: no answer after 4 sends",
-        # "auto: mode unchanged after 4 sends", "open: not sent, no counter heard yet", "open: replaced by stop"
+        # the result of the last command sent (see the README, Sending and its result)
         cv.Optional(CONF_LAST_COMMAND): text_sensor.text_sensor_schema(icon="mdi:check-network"),
+        # every Arexa frame as received, and my own sends, to keep them all in the history: "ok -62 cead93..."
+        # (CRC matches; then the signal in dBm and the 38 bytes), "repaired ..." (one wrong bit), "bad ..." (wrong
+        # CRC), "tx cead93..." (sent)
+        cv.Optional(CONF_LAST_FRAME): text_sensor.text_sensor_schema(
+            icon="mdi:radio-tower", entity_category=ENTITY_CATEGORY_DIAGNOSTIC
+        ),
     }
 )
 
@@ -40,3 +46,6 @@ async def to_code(config):
     if CONF_LAST_COMMAND in config:
         t = await text_sensor.new_text_sensor(config[CONF_LAST_COMMAND])
         cg.add(hub.set_last_command_text_sensor(t))
+    if CONF_LAST_FRAME in config:
+        t = await text_sensor.new_text_sensor(config[CONF_LAST_FRAME])
+        cg.add(hub.set_last_frame_text_sensor(t))

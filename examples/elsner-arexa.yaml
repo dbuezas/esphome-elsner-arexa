@@ -99,3 +99,5 @@ text_sensor:
       name: Arexa Station Raw
     last_command:
       name: Arexa Last Command
+    last_frame:
+      name: Arexa Last Frame
