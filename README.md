@@ -156,12 +156,13 @@ used for the fields with a check of their own): over 4 hours alternating, 29% of
 with a matching CRC that way, against 42% with the chip's decoder. The station answers the RC 14 ms after its packet, so the component sets the main loop interval to 2 ms (the
 default 16 ms misses most answers). The gain is fixed (no AGC): with the AGC, the gain was still low from the
 RC's packet when the station answered, 16 dB weaker, and 43% of its packets came with wrong bits; with the gain
-fixed, 6% (4 hours alternating). FSK needs no gain control. Without a limit the fixed gain did not always settle at
-the same level, and the higher ones broke the station's packets; with the DVGA's 2 or 3 highest steps left out it
-settles the same every time (87% of them usable against 46%, 6 hours alternating). How many steps depends on how
-strong the station comes in, so the component calibrates it: it counts the station's answers to the RC's packets,
-compares the other levels with the current one now and then (rarer and rarer while it stays), and keeps the level
-across reboots. From the full gain it found 2 steps in about 1.5 hours (11 of 15 answers against 2 of 15). Sending: the chip does
+fixed, 6% (4 hours alternating). FSK needs no gain control (with the AGC running all the time, half of the
+station's packets broke). The gain gets a limit (the DVGA's highest steps left out) and 5 ms to climb to it, so it
+is the same every time: without the limit, or with only 1 ms, it stopped at different levels and the higher ones
+broke the station's packets. Here 3 steps left out work best (93% of the station's packets usable, the same level at
+25 of 26 fixings). How many steps depends on how strong the station comes in, so the component calibrates it: it
+counts the station's answers to the RC's packets, compares the other levels with the current one now and then
+(rarer and rarer while it stays), and keeps the level across reboots. Sending: the chip does
 the Manchester coding itself (an ESP8266 cannot time 10 µs chips in software while WiFi runs).
 
 ## Protocol

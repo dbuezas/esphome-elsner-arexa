@@ -106,7 +106,7 @@ void ElsnerArexa::setup() {
     return;
   }
   this->radio_->register_listener(this);
-  this->gain_pref_ = global_preferences->make_preference<uint8_t>(fnv1_hash("elsner_arexa_gain"));
+  this->gain_pref_ = global_preferences->make_preference<uint8_t>(fnv1_hash("elsner_arexa_gain_5ms"));
   uint8_t level;
   if (this->gain_pref_.load(&level) && level <= GAIN_LEVEL_MAX)
     this->gain_level_ = level;
@@ -158,23 +158,24 @@ void ElsnerArexa::start_listening() {
   this->fix_gain_();
 }
 
-// The gain is fixed (no AGC): 1 ms of receiving noise brings it to the maximum, then it is frozen. With the AGC
-// (frozen on the sync word) the gain was still low from the RC's packet when the station answered 8 ms later, 16 dB
-// weaker: 43% of its packets came with wrong bits, against 6% with the gain fixed (2026-11-06, 4 h alternating). FSK
-// needs no gain control: the bits are in the frequency. Done again after each station packet (the next RC packet is
-// a minute away), in case a signal was there while the gain settled.
-// Without a limit the gain did not always settle at the same level (the RC's RSSI jumped between -61, -56 and
-// -52 dBm from one fixing to the next), and the higher ones broke the station's packets: 22%, 62% and 90% of them
-// with wrong bits. With the DVGA's 3 highest steps left out the noise brings it to the same level every time:
-// against no limit, with the gain fixed again every 5 min, 87% against 46% of the station's packets usable, 5
-// against 46 lost (2026-11-08, 6 h alternating; 2 steps: 83%, LNA limits: no better). How many steps are best
-// depends on how strong the station comes in, so gain_trial_ finds it. (Letting the AGC set the gain on each
-// station packet and holding it does not work: the preamble, 13 chips, is too short for the AGC to settle.)
+// The gain is fixed (no AGC): 5 ms of receiving noise bring it up to its limit, then it is frozen. With the AGC
+// frozen on the sync word, the gain was still low from the RC's packet when the station answered 8 ms later, 16 dB
+// weaker: 43% of its packets came with wrong bits, against 6% with the gain fixed (2026-11-06, 4 h alternating);
+// holding the gain the AGC found on a station packet fails too (the preamble, 13 chips, is too short for it to
+// settle), and with the AGC running all the time half of the station's packets broke. FSK needs no gain control: the
+// bits are in the frequency. Done again after each station packet (the next RC packet is a minute away), in case a
+// signal was there while the gain settled.
+// The limit (the DVGA's highest steps left out, gain_level_) makes the gain the same every time: the noise always
+// brings it to the limit. Without one, or with only 1 ms to climb, it stopped at different levels (the RC's RSSI
+// jumped between -67, -57 and -54 dBm), and the higher ones broke the station's packets. With 5 ms and 3 steps left
+// out: the same level at 25 of 26 fixings and 93% of the station's packets usable, against 88% and 20 of 24 with
+// 1 ms and 2 steps; 3 steps and the LNA's 6 dB left out: 63% (2026-11-08, 2 h alternating, fixed again every
+// minute). How many steps are best depends on how strong the station comes in, so gain_trial_ finds it.
 void ElsnerArexa::fix_gain_() {
   auto *r = this->radio_;
   r->set_freeze(cc1101::Freeze::FREEZE_DEFAULT);
   r->begin_rx();
-  delayMicroseconds(1000);
+  delayMicroseconds(5000);
   r->set_freeze(cc1101::Freeze::FREEZE_ANALOG_AND_DIGITAL);
   r->begin_rx();
 }
