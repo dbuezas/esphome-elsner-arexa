@@ -75,6 +75,9 @@ and -52 dBm), and the higher levels broke the station's packets (22%, 62%, 90% w
 again every 5 min made it worse (81%). With the DVGA's 3 highest steps left out it settles the same every time: 87%
 of the station's packets usable against 46%, 5 lost against 46 (6 h alternating; 2 steps 83%; LNA limits and 1
 step no better).
+How many steps depends on the distance, so the component now calibrates it (counts the station's answers, compares
+other levels now and then). Letting the AGC set the gain on each station packet and holding it failed (1 of 6
+usable): the 13-chip preamble is too short for the AGC.
 
 ## Low
 

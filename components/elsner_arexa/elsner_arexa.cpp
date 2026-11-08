@@ -106,6 +106,11 @@ void ElsnerArexa::setup() {
     return;
   }
   this->radio_->register_listener(this);
+  this->gain_pref_ = global_preferences->make_preference<uint8_t>(fnv1_hash("elsner_arexa_gain"));
+  uint8_t level;
+  if (this->gain_pref_.load(&level) && level <= GAIN_LEVEL_MAX)
+    this->gain_level_ = level;
+  this->probe_level_ = (this->gain_level_ + 1) % (GAIN_LEVEL_MAX + 1);
   this->start_listening();
   // the window's last state survives a reboot
   if (std::isnan(this->outside_lock_))
@@ -149,7 +154,7 @@ void ElsnerArexa::start_listening() {
   r->set_packet_length(N - 2);
   r->set_packet_mode(true);
   r->set_output_power(this->output_power_);
-  r->set_max_dvga_gain(cc1101::MaxDvgaGain::MAX_DVGA_GAIN_MINUS_3);  // see fix_gain_
+  r->set_max_dvga_gain(static_cast<cc1101::MaxDvgaGain>(this->gain_level_));  // see fix_gain_
   this->fix_gain_();
 }
 
@@ -160,9 +165,11 @@ void ElsnerArexa::start_listening() {
 // a minute away), in case a signal was there while the gain settled.
 // Without a limit the gain did not always settle at the same level (the RC's RSSI jumped between -61, -56 and
 // -52 dBm from one fixing to the next), and the higher ones broke the station's packets: 22%, 62% and 90% of them
-// with wrong bits. The DVGA's 3 highest steps are left out: then the noise brings it to the same level every time.
-// Against no limit, with the gain fixed again every 5 min: 87% against 46% of the station's packets usable, 5
-// against 46 lost (2026-11-08, 6 h alternating; 2 steps: 83%, LNA limits: no better).
+// with wrong bits. With the DVGA's 3 highest steps left out the noise brings it to the same level every time:
+// against no limit, with the gain fixed again every 5 min, 87% against 46% of the station's packets usable, 5
+// against 46 lost (2026-11-08, 6 h alternating; 2 steps: 83%, LNA limits: no better). How many steps are best
+// depends on how strong the station comes in, so gain_trial_ finds it. (Letting the AGC set the gain on each
+// station packet and holding it does not work: the preamble, 13 chips, is too short for the AGC to settle.)
 void ElsnerArexa::fix_gain_() {
   auto *r = this->radio_;
   r->set_freeze(cc1101::Freeze::FREEZE_DEFAULT);
@@ -182,6 +189,10 @@ void ElsnerArexa::loop() {
   for (auto &item : this->queue_)
     this->decode_(item.bytes, item.rssi, item.freq_offset);
   this->queue_.clear();
+  if (this->trial_open_ && millis() - this->trial_ms_ > 200) {  // the station's answer comes 8..14 ms after the RC
+    this->trial_open_ = false;
+    this->gain_result_(false);
+  }
   if (this->cmd_ < 0)
     return;
   // the station answers 14 ms after a copy it takes; it ignores the later copies (same counter)
@@ -263,6 +274,10 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
     ESP_LOGD(TAG, "Not my system ID, dropped");
     return;
   }
+  if (sender == this->rc_address_ && !fixed)
+    this->gain_trial_(false);
+  else if (sender == this->station_address_)
+    this->gain_trial_(true);
   // A packet with 3 or more wrong bits can look like a repairable one (about 1 in 230), and then the repair makes it
   // wrong. So a repaired packet only confirms a send: that needs the station's address and the exact counter sent.
   if (fixed) {
@@ -634,9 +649,68 @@ void ElsnerArexa::transmit_() {
   this->copies_++;
 }
 
+// Gain calibration. Each RC packet is a trial: does a usable station packet follow within 200 ms (the station
+// answers every RC packet)? Blocks of GAIN_BLOCK trials alternate between the current level and another one (each
+// other level in turn: neighbours alone can be as bad as each other, 0 and 1 here); after GAIN_PAIRS blocks each,
+// the other level wins with GAIN_MARGIN more answers. While the level stays, the comparisons get rarer: after each one
+// without a change, twice as many trials on the current level alone before the next (at most GAIN_HOLD_MAX rounds).
+// The level is kept across reboots. Not while sending (the answers then belong to my sends).
+void ElsnerArexa::gain_trial_(bool station) {
+  if (this->cmd_ >= 0)
+    return;
+  if (station) {
+    if (this->trial_open_ && millis() - this->trial_ms_ <= 200) {
+      this->trial_open_ = false;
+      this->gain_result_(true);
+    }
+    return;
+  }
+  if (this->trial_open_)  // the RC repeats when the station did not answer
+    this->gain_result_(false);
+  this->trial_open_ = true;
+  this->trial_ms_ = millis();
+}
+
+void ElsnerArexa::gain_result_(bool answered) {
+  if (this->hold_trials_ > 0) {
+    this->hold_trials_--;
+    return;
+  }
+  const int i = this->probing_;
+  this->cal_trials_[i]++;
+  this->cal_answers_[i] += answered;
+  if (++this->cal_block_ < GAIN_BLOCK)
+    return;
+  this->cal_block_ = 0;
+  if (this->probing_ && ++this->cal_pairs_ >= GAIN_PAIRS) {
+    ESP_LOGI(TAG, "Gain: level %u %d/%d answers, level %u %d/%d", this->gain_level_, this->cal_answers_[0],
+             this->cal_trials_[0], this->probe_level_, this->cal_answers_[1], this->cal_trials_[1]);
+    if (this->cal_answers_[1] >= this->cal_answers_[0] + GAIN_MARGIN) {
+      this->gain_level_ = this->probe_level_;
+      this->gain_pref_.save(&this->gain_level_);
+      ESP_LOGI(TAG, "Gain: now level %u (DVGA %u steps left out)", this->gain_level_, this->gain_level_);
+      this->hold_rounds_ = 0;
+    } else {
+      this->hold_rounds_ = std::min(std::max(1, 2 * this->hold_rounds_), GAIN_HOLD_MAX);
+      this->hold_trials_ = this->hold_rounds_ * 2 * GAIN_PAIRS * GAIN_BLOCK;
+    }
+    memset(this->cal_trials_, 0, sizeof(this->cal_trials_));
+    memset(this->cal_answers_, 0, sizeof(this->cal_answers_));
+    this->cal_pairs_ = 0;
+    do
+      this->probe_level_ = (this->probe_level_ + 1) % (GAIN_LEVEL_MAX + 1);
+    while (this->probe_level_ == this->gain_level_);
+  }
+  this->probing_ = !this->probing_;
+  this->radio_->set_max_dvga_gain(
+      static_cast<cc1101::MaxDvgaGain>(this->probing_ ? this->probe_level_ : this->gain_level_));
+  this->fix_gain_();
+}
+
 void ElsnerArexa::dump_config() {
   ESP_LOGCONFIG(TAG, "Elsner Arexa:");
   ESP_LOGCONFIG(TAG, "  Frequency: %.3f MHz", this->frequency_ / 1e6f);
+  ESP_LOGCONFIG(TAG, "  Gain level: %u (DVGA steps left out, calibrated)", this->gain_level_);
   if (this->learned_)
     ESP_LOGCONFIG(TAG, "  Pairing: system ID %02x%02x, RC address %02x, station address %02x (%s)", this->pairing_[0],
                   this->pairing_[1],
