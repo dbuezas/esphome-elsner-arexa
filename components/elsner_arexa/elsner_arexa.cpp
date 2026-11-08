@@ -149,6 +149,7 @@ void ElsnerArexa::start_listening() {
   r->set_packet_length(N - 2);
   r->set_packet_mode(true);
   r->set_output_power(this->output_power_);
+  r->set_max_dvga_gain(cc1101::MaxDvgaGain::MAX_DVGA_GAIN_MINUS_3);  // see fix_gain_
   this->fix_gain_();
 }
 
@@ -157,6 +158,11 @@ void ElsnerArexa::start_listening() {
 // weaker: 43% of its packets came with wrong bits, against 6% with the gain fixed (2026-11-06, 4 h alternating). FSK
 // needs no gain control: the bits are in the frequency. Done again after each station packet (the next RC packet is
 // a minute away), in case a signal was there while the gain settled.
+// Without a limit the gain did not always settle at the same level (the RC's RSSI jumped between -61, -56 and
+// -52 dBm from one fixing to the next), and the higher ones broke the station's packets: 22%, 62% and 90% of them
+// with wrong bits. The DVGA's 3 highest steps are left out: then the noise brings it to the same level every time.
+// Against no limit, with the gain fixed again every 5 min: 87% against 46% of the station's packets usable, 5
+// against 46 lost (2026-11-08, 6 h alternating; 2 steps: 83%, LNA limits: no better).
 void ElsnerArexa::fix_gain_() {
   auto *r = this->radio_;
   r->set_freeze(cc1101::Freeze::FREEZE_DEFAULT);

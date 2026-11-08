@@ -70,6 +70,11 @@ clean against 51% after the RC's packets. The AGC: frozen on the sync word, the 
 packet (16 dB stronger) when the station answered 8 ms later. With the gain fixed: 6% of the station's packets with
 wrong bits against 43%, 93% usable against 44% (4 h alternating). The stock driver also keeps the RX FIFO through a
 send (no SFRX), so a packet half received when we send makes the next one invalid; offer that fix upstream.
+Later (2026-11-08): the fixed gain did not always settle at the same level (the RC's RSSI jumped between -61, -56
+and -52 dBm), and the higher levels broke the station's packets (22%, 62%, 90% with wrong bits). Fixing the gain
+again every 5 min made it worse (81%). With the DVGA's 3 highest steps left out it settles the same every time: 87%
+of the station's packets usable against 46%, 5 lost against 46 (6 h alternating; 2 steps 83%; LNA limits and 1
+step no better).
 
 ## Low
 

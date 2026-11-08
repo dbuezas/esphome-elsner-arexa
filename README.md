@@ -156,7 +156,9 @@ used for the fields with a check of their own): over 4 hours alternating, 29% of
 with a matching CRC that way, against 42% with the chip's decoder. The station answers the RC 14 ms after its packet, so the component sets the main loop interval to 2 ms (the
 default 16 ms misses most answers). The gain is fixed (no AGC): with the AGC, the gain was still low from the
 RC's packet when the station answered, 16 dB weaker, and 43% of its packets came with wrong bits; with the gain
-fixed, 6% (4 hours alternating). FSK needs no gain control. Sending: the chip does
+fixed, 6% (4 hours alternating). FSK needs no gain control. The gain is fixed with the DVGA's 3 highest steps left
+out: without that limit it did not always settle at the same level, and the higher ones broke the station's
+packets (87% of them usable with the limit against 46% without, 6 hours alternating). Sending: the chip does
 the Manchester coding itself (an ESP8266 cannot time 10 µs chips in software while WiFi runs).
 
 ## Protocol
