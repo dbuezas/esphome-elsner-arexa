@@ -80,6 +80,10 @@ other levels now and then). Letting the AGC set the gain on each station packet 
 usable): the 13-chip preamble is too short for the AGC. The AGC running all the time failed too (half broken). Even
 with a limit, 1 ms was not always enough for the gain to climb to it (RC RSSI -67/-57/-54 from one fixing to the
 next); with 5 ms it lands on the limit every time (25 of 26), 3 steps: 93% usable.
+With the gain settled, the receive settings again (2026-11-09, 10 h alternating, ~140 station packets each):
+deviation 41.3 kHz with filter 232 kHz gave 83% clean, 94% usable, against 76% and 91% at 47.6/270 (each alone no
+better; 325 kHz and +-5 kHz worse), so that is the default now. Rebuilt from neighbouring clean packets, most
+broken ones have 1 or 2 wrong bits; a few lose the bit timing (50+ wrong bits) or have a short burst (9-17).
 
 ## Low
 

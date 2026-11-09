@@ -134,14 +134,16 @@ void ElsnerArexa::setup() {
 // 10, 0 = 01); the chip decodes the Manchester. The preamble is only ~13 alternating chips, which fit both chip
 // phases: the sync word, the first two frame bytes ce ad, fixes the phase. Then 36 bytes: frame bytes 2..37, with
 // the CRC. Measured against raw chips decoded here (sync on the 16 chips of ce): 42% against 29% of the station's
-// packets with a matching CRC (2026-11-04, 4 h alternating).
+// packets with a matching CRC (2026-11-04, 4 h alternating). Deviation 41.3 kHz and filter 232 kHz (were 47.6 and
+// 270): 83% of the station's packets clean against 76%, 94% usable against 91%, the RC's the same (10 h alternating
+// with the fixed gain, 2026-11-09; each alone no better, 325 kHz and +-5 kHz worse).
 void ElsnerArexa::start_listening() {
   auto *r = this->radio_;
   r->set_frequency(this->frequency_);
   r->set_modulation_type(cc1101::Modulation::MODULATION_2_FSK);
   r->set_symbol_rate(100000);
-  r->set_fsk_deviation(47.6e3f);
-  r->set_filter_bandwidth(270e3f);
+  r->set_fsk_deviation(41.3e3f);
+  r->set_filter_bandwidth(232e3f);
   r->set_sync_mode(cc1101::SyncMode::SYNC_MODE_16_16);
   r->set_manchester(true);
   r->set_sync1(HEADER[0]);
