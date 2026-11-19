@@ -60,7 +60,7 @@ TYPES = {
         device_class=DEVICE_CLASS_ILLUMINANCE,
         state_class=STATE_CLASS_MEASUREMENT,
     ),
-    # the rain sensor's raw reading (lower = wetter); the rain binary sensor is the station's rain alarm
+    # the station's byte 29 (not decoded, the same in every packet so far); the rain binary sensor is the rain alarm
     "rain_sensor": sensor.sensor_schema(
         accuracy_decimals=0, state_class=STATE_CLASS_MEASUREMENT, icon="mdi:water", entity_category=ENTITY_CATEGORY_DIAGNOSTIC
     ),

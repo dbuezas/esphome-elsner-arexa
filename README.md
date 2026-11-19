@@ -9,8 +9,8 @@ station that drives the window motor). With a CC1101 868 MHz module it gives you
 
 - **Buttons:** open, stop, close, automatic mode, manual mode. They work like the RC's own buttons.
 - **A switch** for automatic mode.
-- **Sensors:** inside temperature (from the RC), outside temperature, wind, brightness, rain alarm, rain sensor,
-  automatic or manual mode.
+- **Sensors:** inside temperature (from the RC), outside temperature, wind, brightness, rain alarm, wind alarm,
+  automatic or manual mode, and a raw station byte (`rain_sensor`, not decoded yet).
 - **An event** for every press on the real RC.
 - **The window's state** (open or closed), worked out from the commands, the alarms and the RC's automatic settings.
 
@@ -238,9 +238,8 @@ byte `constant - 2 * value`: that was this sum).
 | station | 21 | rain alarm: `52` dry, `4e` wet (byte 26 the same: `b2`, `ae`) |
 | station | 22, 23 | brightness, about 1.05 lx per step, bases `3c 80`; byte 24 `00` |
 | station | 25 | mode: `b3` manual, `bf` automatic |
-| station | 28 | wind flag: `8b` calm |
-| station | 29 | rain sensor reading: `bc` dry, lower = wetter |
-| station | 27 | not decoded: `b2` in all packets so far |
+| station | 27 | wind alarm: `b2` calm, `a9` while it holds (about 5 minutes after the last gust) |
+| station | 28, 29 | not decoded: `8b`, `bc` in all packets so far, rain or not (`rain_sensor` publishes byte 29) |
 | both | rest | filler: `d0` (`30` in `v`) |
 
 The RC sends the commands as `v` (bytes 17..19, also on the Solexa): `25 ba 30` open, `27 b6 30` stop, `36 98 30`

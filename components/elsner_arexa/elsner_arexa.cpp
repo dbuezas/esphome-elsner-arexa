@@ -373,7 +373,7 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
       this->windy_ms_ = millis();
     }
     this->raining_ = u[21] < 0x50;    // 0x52 dry, 0x4e while the rain alarm holds
-    this->wind_flag_ = u[28] != 0x8b;  // 0x8b calm
+    this->wind_flag_ = u[27] != 0xb2;  // 0xb2 calm, 0xa9 while the wind alarm holds
 #ifdef USE_TEXT_SENSOR
     if (this->station_raw_ != nullptr) {
       char hex[3 * 19];
@@ -400,7 +400,7 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
     if (this->raw_brightness_ != nullptr)
       this->raw_brightness_->publish_state(bright);
     if (this->rain_sensor_ != nullptr)
-      this->rain_sensor_->publish_state(u[29]);  // 0xbc dry, lower = wetter
+      this->rain_sensor_->publish_state(u[29]);  // 0xbc in every packet so far, rain or not
 #endif
 #ifdef USE_BINARY_SENSOR
     if (this->rain_ != nullptr)
