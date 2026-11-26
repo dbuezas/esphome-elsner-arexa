@@ -94,6 +94,19 @@ deviation 41.3 kHz with filter 232 kHz gave 83% clean, 94% usable, against 76% a
 better; 325 kHz and +-5 kHz worse), so that is the default now. Rebuilt from neighbouring clean packets, most
 broken ones have 1 or 2 wrong bits; a few lose the bit timing (50+ wrong bits) or have a short burst (9-17).
 
+### 14. The station's packets the 868 module misses (2026-11-26, against an RTL-SDR)
+An RTL-SDR (farther away, a plain monopole) decoded 100% of the RC's, the station's and my packets; the gateway got
+44-61% of the station's (most missed entirely, the rest with 2-5 wrong bits spread over the packet), the RC's 85-95%.
+The station's signal is the cleanest of the three (tones +-46 kHz, 4-5 kHz jitter, +5 kHz from my TX, chip rate
++0.3%). Not the cause (each measured against the SDR, alternating per send or minute): ESP latency (the driver reads
+0.1 ms after GDO0), the receiver's restart after a packet (staying in RX the same), the Wi-Fi updates in the reply
+gap (handling packets 30 ms later the same), TI's 100 kBaud demodulator and AGC values, FOC gated or off, FREND1,
+FSCAL/TEST0, deviation 47.6 kHz, other gain caps. Helped: TEST2/TEST1 0x81/0x35 (now the default), 61% against 44%.
+Polling the chip's status during a packet breaks the packet (SPI activity), so no probing that way.
+Strongest lead: on 2026-11-05 the 433.30 module tuned to 868 MHz got 175 of 177 station answers clean at -84 dBm,
+the 868 module 41%, same board and code. So the 868 module, its antenna or its place on the board. To do: try the
+module or the antenna swapped, or the SDR antenna right at the gateway (does it still get them all there?).
+
 ## Low
 
 - The command list exists four times in an order that must match (now noted at each). Generate from one list?

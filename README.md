@@ -108,8 +108,8 @@ elsner_arexa:
     rain_alarm: true     # D. rain: closed
 ```
 
-- Open and close (from Home Assistant or the RC, once the station took them) move it, a stop stops it. They also
-  switch the station to manual mode.
+- Open and close (from the RC, or from Home Assistant from the first send on; undone if the station never answers)
+  move it, a stop stops it. They also switch the station to manual mode.
 - A wind or rain alarm closes the window in both modes, and the station ignores the buttons until it ends.
 - In automatic mode, settings A and B decide. Between their two limits (or with A off) the window stays as it was.
 - The state survives a restart of the ESP. Until the first command or decision after a first start it is unknown.

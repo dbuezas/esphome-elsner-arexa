@@ -115,6 +115,7 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
   void finish_(const char *result);
   void check_answer_(const uint8_t *v);
   void fix_gain_();
+  void write_register_(uint8_t address, uint8_t value);
   void publish_frame_(const char *kind, float rssi, const uint8_t *c);
   void publish_mode_(uint8_t mode);
   bool alarm_();
@@ -176,7 +177,12 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
   int8_t dir_{0};
   uint32_t move_ms_{0};
   float target_{NAN};  // stop here (move_to between 0 and 1)
-  float pending_target_{NAN};  // the same, until the open or close is confirmed
+  // the position before the command being sent, to undo it if the station never answers
+  bool moved_{false};
+  float undo_pos_{NAN};
+  int8_t undo_dir_{0};
+  uint32_t undo_ms_{0};
+  float undo_target_{NAN};
   uint32_t publish_ms_{0};
   int8_t auto_mode_on_{-1};  // the station's mode: -1 not heard yet
   int8_t warm_{-1};    // A: the inside temperature was above open_above and not yet 2 °C below it (-1: not known)

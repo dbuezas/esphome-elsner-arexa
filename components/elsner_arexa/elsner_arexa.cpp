@@ -111,6 +111,11 @@ void ElsnerArexa::setup() {
   if (this->gain_pref_.load(&level) && level <= GAIN_LEVEL_MAX)
     this->gain_level_ = level;
   this->probe_level_ = (this->gain_level_ + 1) % (GAIN_LEVEL_MAX + 1);
+  // TEST2/TEST1 as TI gives them for RX filters below 325 kHz (the driver keeps the reset values, meant for wider
+  // ones): 61% of the station's packets usable against 44%, measured against an SDR that got them all (2026-11-26,
+  // alternating per send). The driver writes these registers only in its own setup, so once is enough.
+  this->write_register_(0x2C, 0x81);  // TEST2
+  this->write_register_(0x2D, 0x35);  // TEST1
   this->start_listening();
   // the window's last position survives a reboot (from before the position: open or closed)
   if (std::isnan(this->outside_lock_))
@@ -190,6 +195,13 @@ void ElsnerArexa::fix_gain_() {
   r->begin_rx();
 }
 
+void ElsnerArexa::write_register_(uint8_t address, uint8_t value) {
+  this->radio_->enable();
+  this->radio_->write_byte(address);
+  this->radio_->write_byte(value);
+  this->radio_->disable();
+}
+
 // Called by the CC1101 driver before it listens again: keep it short (the station answers the RC 14 ms later).
 void ElsnerArexa::on_packet(const std::vector<uint8_t> &packet, float freq_offset, float rssi, uint8_t lqi) {
   if (this->queue_.size() < 8)
@@ -206,10 +218,10 @@ void ElsnerArexa::loop() {
   }
   if (this->dir_ != 0) {
     const float p = this->position_();
-    if (!std::isnan(this->target_) && (this->dir_ > 0 ? p >= this->target_ : p <= this->target_)) {
+    // (the stop waits while the open or close is still being sent)
+    if (!std::isnan(this->target_) && (this->dir_ > 0 ? p >= this->target_ : p <= this->target_) && this->cmd_ < 0) {
       this->target_ = NAN;
-      if (this->cmd_ < 0)
-        this->send_command(CMD_STOP);
+      this->send_command(CMD_STOP);
     }
     if (this->dir_ > 0 ? p >= 1 : p <= 0) {  // at the end: still
       this->pos_ = p;
@@ -487,6 +499,16 @@ bool ElsnerArexa::send_command(Command cmd) {
   }
   this->resync_ = !this->have_counter_;  // no counter heard since the start (for example without the RC): announce one
   this->new_send_();
+  // the window moves from the first send on (the station mostly takes it, the answer is what gets lost); undone in
+  // finish_ if the station never answers
+  if (cmd == CMD_OPEN || cmd == CMD_STOP || cmd == CMD_CLOSE) {
+    this->undo_pos_ = this->pos_;
+    this->undo_dir_ = this->dir_;
+    this->undo_ms_ = this->move_ms_;
+    this->undo_target_ = this->target_;
+    this->moved_ = true;
+    this->window_command_(cmd);
+  }
   return true;
 }
 
@@ -495,11 +517,15 @@ void ElsnerArexa::finish_(const char *result) {
     ESP_LOGI(TAG, "%s: confirmed after %d send%s", COMMAND_NAMES[this->cmd_], this->sends_, this->sends_ == 1 ? "" : "s");
   else
     ESP_LOGW(TAG, "%s: %s", COMMAND_NAMES[this->cmd_], result);
-  if (strcmp(result, "confirmed") == 0) {
-    this->window_command_(this->cmd_);
-    this->target_ = this->pending_target_;
+  if (this->moved_ && strcmp(result, "confirmed") != 0) {
+    // the station never took it: back to the position as it was (and still is, if it was moving)
+    this->pos_ = this->undo_pos_;
+    this->dir_ = this->undo_dir_;
+    this->move_ms_ = this->undo_ms_;
+    this->target_ = this->undo_target_;
+    this->publish_position_();
   }
-  this->pending_target_ = NAN;
+  this->moved_ = false;
 #ifdef USE_TEXT_SENSOR
   if (this->last_command_ != nullptr)
     this->last_command_->publish_state(std::string(COMMAND_NAMES[this->cmd_]) + ": " + result);
@@ -676,7 +702,7 @@ void ElsnerArexa::move_to(float position) {
   if (std::isnan(p) && !std::isnan(target))
     target = NAN;
   if (this->send_command(open ? CMD_OPEN : CMD_CLOSE))
-    this->pending_target_ = target;
+    this->target_ = target;
 }
 
 // The cover, the window text sensor (open: some or all the way) and, when still, the saved position.
