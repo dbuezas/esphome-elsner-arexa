@@ -84,8 +84,8 @@ and -52 dBm), and the higher levels broke the station's packets (22%, 62%, 90% w
 again every 5 min made it worse (81%). With the DVGA's 3 highest steps left out it settles the same every time: 87%
 of the station's packets usable against 46%, 5 lost against 46 (6 h alternating; 2 steps 83%; LNA limits and 1
 step no better).
-How many steps depends on the distance, so the component now calibrates it (counts the station's answers, compares
-other levels now and then). Letting the AGC set the gain on each station packet and holding it failed (1 of 6
+A calibration that compared the levels by the station's answers (2026-11-08) settled on 2 steps, worse against an SDR
+(28% against 36%, 2026-11-26), and is removed: 3 steps fixed. Letting the AGC set the gain on each station packet and holding it failed (1 of 6
 usable): the 13-chip preamble is too short for the AGC. The AGC running all the time failed too (half broken). Even
 with a limit, 1 ms was not always enough for the gain to climb to it (RC RSSI -67/-57/-54 from one fixing to the
 next); with 5 ms it lands on the limit every time (25 of 26), 3 steps: 93% usable.

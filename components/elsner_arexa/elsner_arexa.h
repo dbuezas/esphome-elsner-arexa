@@ -125,8 +125,6 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
   float position_();
   void move_(int8_t dir, uint32_t delay);
   void publish_position_();
-  void gain_trial_(bool station);
-  void gain_result_(bool answered);
 
   cc1101::CC1101Component *radio_{nullptr};
   float frequency_{868.19e6f};
@@ -194,24 +192,6 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
   uint32_t command_ms_{0};  // the last open, stop or close
   ESPPreferenceObject position_pref_;
 
-  // the gain calibration (elsner_arexa.cpp, fix_gain_ and gain_trial_): DVGA steps left out, 0..GAIN_LEVEL_MAX
-  static const uint8_t GAIN_LEVEL_MAX = 3;
-  static const int GAIN_BLOCK = 5;
-  static const int GAIN_PAIRS = 3;
-  static const int GAIN_MARGIN = 3;
-  static const int GAIN_HOLD_MAX = 16;  // rounds of 30 trials (one a minute): 8 h
-  uint8_t gain_level_{3};
-  ESPPreferenceObject gain_pref_;
-  bool trial_open_{false};
-  uint32_t trial_ms_{0};
-  bool probing_{false};  // the current block uses probe_level_
-  uint8_t probe_level_{2};
-  int cal_block_{0};
-  int cal_pairs_{0};
-  int cal_trials_[2]{};  // [current, probe]
-  int cal_answers_[2]{};
-  int hold_rounds_{0};  // rounds on the current level alone after the last comparison
-  int hold_trials_{0};
 
   int last_remote_{-1};
   int last_remote_counter_{-1};  // the counter of the last RC command
