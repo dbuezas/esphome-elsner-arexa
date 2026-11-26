@@ -15,7 +15,6 @@ CONF_OPEN_ABOVE = "open_above"
 CONF_OUTSIDE_LOCK = "outside_lock"
 CONF_WIND_ALARM = "wind_alarm"
 CONF_RAIN_ALARM = "rain_alarm"
-CONF_TRAVEL_TIME = "travel_time"
 
 elsner_arexa_ns = cg.esphome_ns.namespace("elsner_arexa")
 ElsnerArexa = elsner_arexa_ns.class_("ElsnerArexa", cg.Component)
@@ -81,8 +80,6 @@ CONFIG_SCHEMA = cv.Schema(
         # work as soon as any Arexa packet brought the counter.
         cv.Optional(CONF_PAIRING, default="auto"): validate_pairing,
         cv.Optional(CONF_SETTINGS, default={}): SETTINGS_SCHEMA,
-        # the window's time from open to closed: a stop within it after a close leaves the window partly open
-        cv.Optional(CONF_TRAVEL_TIME, default="40s"): cv.positive_time_period_milliseconds,
     }
 ).extend(cv.COMPONENT_SCHEMA)
 
@@ -99,7 +96,6 @@ async def to_code(config):
         if settings[key] is not None:
             cg.add(getattr(var, f"set_{key}")(settings[key]))
     cg.add(var.set_rain_alarm(settings[CONF_RAIN_ALARM]))
-    cg.add(var.set_travel_time(config[CONF_TRAVEL_TIME]))
     if config[CONF_PAIRING] != "auto":
         pairing = [int(config[CONF_PAIRING][i : i + 2], 16) for i in range(0, len(config[CONF_PAIRING]), 2)]
         cg.add(var.set_fixed_pairing(pairing))

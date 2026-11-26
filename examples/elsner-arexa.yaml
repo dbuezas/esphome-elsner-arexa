@@ -37,14 +37,13 @@ elsner_arexa:
   cc1101_id: radio_arexa
   # frequency: 868.19MHz  # 868.19 MHz + your module's error (cheap modules: +-40 kHz)
   # pairing: auto         # or the 20 hex digits of the "Arexa Pairing" text sensor, to skip the learning
-  # the RC's automatic settings, for the window text sensor (README: Window state); these are the factory values.
+  # the RC's automatic settings, for the window's state and position (README: Window state); these are the factory values.
   # Copy yours from the RC: hold SET for 3 s while it shows the temperatures or the weather values
   settings:
     open_above: 25°C
     outside_lock: 5°C
     wind_alarm: 4 m/s
     rain_alarm: true
-  travel_time: 40s
 
 sensor:
   - platform: elsner_arexa
@@ -80,6 +79,14 @@ switch:
   - platform: elsner_arexa
     auto_mode:
       name: Arexa Automatic
+
+cover:
+  # the window, its position worked out from the timing (README: Window position)
+  - platform: elsner_arexa
+    name: Arexa Window
+    # open_duration: 26s  # once the motor runs
+    # close_duration: 19s
+    # start_delay: 1s     # from the command to the motor's start
 
 button:
   - platform: elsner_arexa

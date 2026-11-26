@@ -12,7 +12,8 @@ station that drives the window motor). With a CC1101 868 MHz module it gives you
 - **Sensors:** inside temperature (from the RC), outside temperature, wind, brightness, rain alarm, wind alarm,
   automatic or manual mode, and a raw station byte (`rain_sensor`, not decoded yet).
 - **An event** for every press on the real RC.
-- **The window's state** (open or closed), worked out from the commands, the alarms and the RC's automatic settings.
+- **The window as a cover** with its position (and an open/closed text sensor), worked out from the commands, the
+  alarms, the RC's automatic settings and the window's timing.
 
 Nothing has to be opened or re-paired: the component listens to your RC for up to a minute and then speaks with
 its system ID and addresses. The RC keeps working as before.
@@ -38,6 +39,10 @@ elsner_arexa:
   # frequency: 868.19MHz   # 868.19 MHz + your module's crystal error, see below
   # output_power: 11
 
+cover:
+  - platform: elsner_arexa
+    name: Arexa Window
+
 button:
   - platform: elsner_arexa
     open: { name: Arexa Open }
@@ -54,9 +59,10 @@ The full example with all sensors is in [examples/elsner-arexa.yaml](examples/el
 | `sensor` | `inside_temperature`, `outside_temperature`, `wind`, `brightness`, `rain_sensor`, `rc_rssi`, `station_rssi`, `rc_freq_offset`, `station_freq_offset`, and `raw_inside`, `raw_outside`, `raw_brightness` (for calibration) |
 | `binary_sensor` | `rain` (the station's rain alarm), `wind_alarm`, `auto_mode` (on in automatic mode) |
 | `switch` | `auto_mode` (on: automatic, off: manual; it shows the station's mode) |
+| `cover` | the window: open, close, stop, and a position (see Window position); `open_duration`, `close_duration`, `start_delay` |
 | `button` | `open`, `stop`, `close`, `auto`, `manual` |
 | `event` | `remote` (event types `open`, `stop`, `close`, `auto`, `manual`; one event per press: the RC's repeats have the same counter) |
-| `text_sensor` | `pairing`: the pairing of the RC heard on the air; `station_raw`: the station's value bytes 17..35 (for working out new values); `last_command`: the result of the last command sent (see below); `last_frame`: every Arexa frame as received and every frame sent, raw (`ok -62 cead93...`, `repaired`, `bad` for a wrong CRC, `tx`), so the history keeps them all; `window`: `open` or `closed` (see Window state) |
+| `text_sensor` | `pairing`: the pairing of the RC heard on the air; `station_raw`: the station's value bytes 17..35 (for working out new values); `last_command`: the result of the last command sent (see below); `last_frame`: every Arexa frame as received and every frame sent, raw (`ok -62 cead93...`, `repaired`, `bad` for a wrong CRC, `tx`), so the history keeps them all; `window`: `open` (some or all the way) or `closed` (see Window state) |
 
 **Pairing:** by default (`pairing: auto`) the component learns your RC's system ID and the RC's and
 the station's addresses from the first RC status packet. The `pairing` text sensor shows what arrives, as 20 hex
@@ -100,18 +106,31 @@ elsner_arexa:
     outside_lock: 5°C    # B. below this outside temperature: closed, until 2 °C above it
     wind_alarm: 4 m/s    # C. above this wind: closed, held 5 minutes
     rain_alarm: true     # D. rain: closed
-  travel_time: 40s       # open to closed (a stop within it after a close leaves the window partly open)
 ```
 
-- Open and close (from Home Assistant or the RC, once the station took them) set it; a stop within `travel_time`
-  after a close means partly open, so `open`. They also switch the station to manual mode.
+- Open and close (from Home Assistant or the RC, once the station took them) move it, a stop stops it. They also
+  switch the station to manual mode.
 - A wind or rain alarm closes the window in both modes, and the station ignores the buttons until it ends.
 - In automatic mode, settings A and B decide. Between their two limits (or with A off) the window stays as it was.
 - The state survives a restart of the ESP. Until the first command or decision after a first start it is unknown.
 
+**Window position:** the `cover` follows the window's position the same way, timed: the motor starts `start_delay`
+after an open or close (a stop is at once), and the window takes `open_duration` to open and `close_duration` to
+close. A position in between is an open or close, then a stop on time. The station's own moves (alarms, automatic
+mode) count from the packet that shows them. The position survives a restart.
+
+```yaml
+cover:
+  - platform: elsner_arexa
+    name: Arexa Window
+    open_duration: 26s   # the defaults: my window (timed from the end of start_delay)
+    close_duration: 19s
+    start_delay: 1s      # from the command to the motor's start
+```
+
 It is an estimate: the station measures the wind every few seconds but sends it once a minute, so a short gust can
-close the window unseen; and if the window is moved some other way (by hand, a power cut), it is wrong until the
-next command.
+close the window unseen (and its own moves show up to a minute late); and if the window is moved some other way (by
+hand, a power cut), it is wrong until the next full open or close.
 
 **After a restart** the buttons work once the pairing is known: learned from an RC status packet (the RC sends one
 every minute), or fixed in the configuration. Without a counter heard yet, a command starts with a resync, so with a

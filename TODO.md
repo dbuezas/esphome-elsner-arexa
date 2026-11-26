@@ -37,6 +37,8 @@ release). Ordered by priority.
   Nov 11..19, independent of the rain alarm), not byte 28; seen live on 2026-11-23. Bytes 28, 29 never changed
   (the `rain_sensor` still publishes 29). Below 0 °C seen (-1.5 °C), matching Tempelhof.
 
+- Done on 2026-11-26: the window as a cover with a timed position (README: Window position), replacing
+  `travel_time`. Closing tested (100 to 0 % in 1 + 19 s); a position in between not yet tested on air.
 - Done on 2026-11-26: sends confirmed again (the fixed gain right after my own packet lost every answer since
   2026-11-08; now the AGC while sending). #9 tested: a Stop on the RC, sent 6 times, gave one event.
 

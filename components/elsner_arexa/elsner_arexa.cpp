@@ -112,18 +112,19 @@ void ElsnerArexa::setup() {
     this->gain_level_ = level;
   this->probe_level_ = (this->gain_level_ + 1) % (GAIN_LEVEL_MAX + 1);
   this->start_listening();
-  // the window's last state survives a reboot
+  // the window's last position survives a reboot (from before the position: open or closed)
   if (std::isnan(this->outside_lock_))
     this->locked_ = 0;
-  this->window_pref_ = global_preferences->make_preference<int8_t>(fnv1_hash("elsner_arexa_window"));
+  // (the old one first: on the ESP8266 the order of make_preference places them)
+  auto window_pref = global_preferences->make_preference<int8_t>(fnv1_hash("elsner_arexa_window"));
+  this->position_pref_ = global_preferences->make_preference<float>(fnv1_hash("elsner_arexa_position"));
+  float position;
   int8_t window;
-  if (this->window_pref_.load(&window) && window >= 0 && window <= 1) {
-    this->window_ = window;
-#ifdef USE_TEXT_SENSOR
-    if (this->window_text_ != nullptr)
-      this->window_text_->publish_state(window ? "open" : "closed");
-#endif
-  }
+  if (this->position_pref_.load(&position) && position >= 0 && position <= 1)
+    this->pos_ = position;
+  else if (window_pref.load(&window) && window >= 0 && window <= 1)
+    this->pos_ = window;
+  this->publish_position_();
   // The station answers the RC 14 ms after its packet, and the CC1101 driver listens again only when the main loop
   // has read the RC's packet. With the default 16 ms loop most station packets are missed.
   if (App.get_loop_interval() > 2)
@@ -202,6 +203,21 @@ void ElsnerArexa::loop() {
   if (this->trial_open_ && millis() - this->trial_ms_ > 200) {  // the station's answer comes 8..14 ms after the RC
     this->trial_open_ = false;
     this->gain_result_(false);
+  }
+  if (this->dir_ != 0) {
+    const float p = this->position_();
+    if (!std::isnan(this->target_) && (this->dir_ > 0 ? p >= this->target_ : p <= this->target_)) {
+      this->target_ = NAN;
+      if (this->cmd_ < 0)
+        this->send_command(CMD_STOP);
+    }
+    if (this->dir_ > 0 ? p >= 1 : p <= 0) {  // at the end: still
+      this->pos_ = p;
+      this->dir_ = 0;
+      this->publish_position_();
+    } else if (millis() - this->publish_ms_ >= 1000) {
+      this->publish_position_();
+    }
   }
   if (this->cmd_ < 0)
     return;
@@ -479,8 +495,11 @@ void ElsnerArexa::finish_(const char *result) {
     ESP_LOGI(TAG, "%s: confirmed after %d send%s", COMMAND_NAMES[this->cmd_], this->sends_, this->sends_ == 1 ? "" : "s");
   else
     ESP_LOGW(TAG, "%s: %s", COMMAND_NAMES[this->cmd_], result);
-  if (strcmp(result, "confirmed") == 0)
+  if (strcmp(result, "confirmed") == 0) {
     this->window_command_(this->cmd_);
+    this->target_ = this->pending_target_;
+  }
+  this->pending_target_ = NAN;
 #ifdef USE_TEXT_SENSOR
   if (this->last_command_ != nullptr)
     this->last_command_->publish_state(std::string(COMMAND_NAMES[this->cmd_]) + ": " + result);
@@ -571,30 +590,27 @@ bool ElsnerArexa::alarm_() {
   return (this->rain_alarm_ && this->raining_) || (!std::isnan(this->wind_limit_) && (this->windy_ || this->wind_flag_));
 }
 
-// A confirmed open, stop or close, from the gateway or the RC. Each one puts the station in manual mode.
+// A confirmed open, stop or close, from the gateway or the RC. Each one puts the station in manual mode. The motor
+// starts start_delay after an open or close; a stop is at once.
 void ElsnerArexa::window_command_(int cmd) {
   if (cmd != CMD_OPEN && cmd != CMD_STOP && cmd != CMD_CLOSE)
     return;
-  const uint32_t now = millis();
-  this->command_ms_ = now;
+  this->command_ms_ = millis();
   this->auto_mode_on_ = 0;
+  this->target_ = NAN;
   if (this->alarm_()) {
-    this->set_window_(0);
+    this->set_window_(0);  // the station ignores the buttons
     return;
   }
   if (cmd == CMD_STOP) {
-    // a stop while the window closes leaves it partly open; any other stop changes nothing
-    if (this->last_move_ == CMD_CLOSE && now - this->last_move_ms_ < this->travel_ms_)
-      this->set_window_(1);
-    this->last_move_ = CMD_STOP;
+    this->pos_ = this->position_();
+    this->dir_ = 0;
+    this->publish_position_();
     return;
   }
-  const int8_t state = cmd == CMD_OPEN;
-  if (this->window_ != state) {  // a move (not a close when it is closed already)
-    this->last_move_ = cmd;
-    this->last_move_ms_ = now;
-  }
-  this->set_window_(state);
+  const int8_t dir = cmd == CMD_OPEN ? 1 : -1;
+  if (dir != this->dir_)
+    this->move_(dir, this->start_delay_ms_);
 }
 
 // After new values: the alarms, and in automatic mode the RC's settings A (open above the inside temperature, close
@@ -613,19 +629,77 @@ void ElsnerArexa::window_update_() {
   // else: not known yet (just started, between the two limits), or no temperature control: it stays as it is
 }
 
+// The station's own move, all the way: seen up to a minute late (its packet), so from now without the start delay.
 void ElsnerArexa::set_window_(int8_t state) {
-  if (state == this->window_)
+  const int8_t dir = state ? 1 : -1;
+  const float p = this->position_();
+  if (dir == this->dir_ || p == (state ? 1.0f : 0.0f))
     return;
-  ESP_LOGD(TAG, "Window: %s", state ? "open" : "closed");
-  if (this->window_ >= 0) {  // a move by the station; from unknown it may have been there already
-    this->last_move_ = state ? CMD_OPEN : CMD_CLOSE;
-    this->last_move_ms_ = millis();
+  ESP_LOGD(TAG, "Window: the station %s it", state ? "opens" : "closes");
+  this->target_ = NAN;
+  this->move_(dir, 0);
+}
+
+// The position now: from pos_ at move_ms_, at the speed of the direction; NAN if not known.
+float ElsnerArexa::position_() {
+  if (std::isnan(this->pos_) || this->dir_ == 0)
+    return this->pos_;
+  const int32_t t = static_cast<int32_t>(millis() - this->move_ms_);
+  if (t <= 0)
+    return this->pos_;
+  const float p = this->pos_ + this->dir_ * t / static_cast<float>(this->dir_ > 0 ? this->open_ms_ : this->close_ms_);
+  return std::max(0.0f, std::min(1.0f, p));
+}
+
+// Start moving in direction dir, the motor after delay. From an unknown position: as if from the other end.
+void ElsnerArexa::move_(int8_t dir, uint32_t delay) {
+  float p = this->position_();
+  if (std::isnan(p))
+    p = dir > 0 ? 0.0f : 1.0f;
+  this->pos_ = p;
+  this->dir_ = (dir > 0 ? p < 1 : p > 0) ? dir : 0;
+  this->move_ms_ = millis() + delay;
+  this->publish_position_();
+}
+
+void ElsnerArexa::move_to(float position) {
+  const float p = this->position_();
+  float target = NAN;
+  if (position > 0.01f && position < 0.99f) {
+    if (!std::isnan(p) && std::abs(position - p) < 0.02f)
+      return;
+    target = position;
   }
-  this->window_ = state;
-  this->window_pref_.save(&state);
+  const bool open = position >= 0.99f || (!std::isnan(target) && (std::isnan(p) ? position > 0.5f : position > p));
+  // from an unknown position: all the way first
+  if (std::isnan(p) && !std::isnan(target))
+    target = NAN;
+  if (this->send_command(open ? CMD_OPEN : CMD_CLOSE))
+    this->pending_target_ = target;
+}
+
+// The cover, the window text sensor (open: some or all the way) and, when still, the saved position.
+void ElsnerArexa::publish_position_() {
+  this->publish_ms_ = millis();
+  const float p = this->position_();
+  if (this->dir_ == 0 && !std::isnan(p))
+    this->position_pref_.save(&p);
+  const int8_t window = std::isnan(p) ? -1 : p > 0;
+  if (window != this->window_) {
+    this->window_ = window;
 #ifdef USE_TEXT_SENSOR
-  if (this->window_text_ != nullptr)
-    this->window_text_->publish_state(state ? "open" : "closed");
+    if (this->window_text_ != nullptr && window >= 0)
+      this->window_text_->publish_state(window ? "open" : "closed");
+#endif
+  }
+#ifdef USE_COVER
+  if (this->cover_ != nullptr) {
+    this->cover_->position = std::isnan(p) ? 0.5f : p;
+    this->cover_->current_operation = this->dir_ > 0   ? cover::COVER_OPERATION_OPENING
+                                      : this->dir_ < 0 ? cover::COVER_OPERATION_CLOSING
+                                                       : cover::COVER_OPERATION_IDLE;
+    this->cover_->publish_state(false);
+  }
 #endif
 }
 
@@ -731,7 +805,8 @@ void ElsnerArexa::dump_config() {
     ESP_LOGCONFIG(TAG, "  RC not heard yet (it sends a status packet every minute)");
   ESP_LOGCONFIG(TAG, "  RC settings: open above %.1f °C, outside lock %.1f °C, wind alarm %.1f m/s, rain alarm %s",
                 this->open_above_, this->outside_lock_, this->wind_limit_, YESNO(this->rain_alarm_));
-  ESP_LOGCONFIG(TAG, "  Travel time: %u ms", (unsigned) this->travel_ms_);
+  ESP_LOGCONFIG(TAG, "  Window: opens in %u ms, closes in %u ms, the motor starts %u ms after a command",
+                (unsigned) this->open_ms_, (unsigned) this->close_ms_, (unsigned) this->start_delay_ms_);
 }
 
 }  // namespace esphome::elsner_arexa

@@ -22,6 +22,9 @@
 #ifdef USE_SWITCH
 #include "esphome/components/switch/switch.h"
 #endif
+#ifdef USE_COVER
+#include "esphome/components/cover/cover.h"
+#endif
 #include <cmath>
 #include <vector>
 
@@ -45,7 +48,13 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
   void set_outside_lock(float t) { this->outside_lock_ = t; }
   void set_wind_alarm(float speed) { this->wind_limit_ = speed; }
   void set_rain_alarm(bool on) { this->rain_alarm_ = on; }
-  void set_travel_time(uint32_t ms) { this->travel_ms_ = ms; }
+  // the window's timing (README: Window position): open and close from the motor's start, and the time from a command
+  // to the motor's start
+  void set_open_time(uint32_t ms) { this->open_ms_ = ms; }
+  void set_close_time(uint32_t ms) { this->close_ms_ = ms; }
+  void set_start_delay(uint32_t ms) { this->start_delay_ms_ = ms; }
+  // for the cover: open (1) or close (0), or move to a position in between (open or close, then stop on time)
+  void move_to(float position);
 
   void setup() override;
   void loop() override;
@@ -88,6 +97,9 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
 #ifdef USE_EVENT
   void set_remote_event(event::Event *e) { this->remote_ = e; }
 #endif
+#ifdef USE_COVER
+  void set_cover(cover::Cover *c) { this->cover_ = c; }
+#endif
 #ifdef USE_TEXT_SENSOR
   void set_pairing_text_sensor(text_sensor::TextSensor *s) { this->pairing_text_ = s; }
   void set_station_raw_text_sensor(text_sensor::TextSensor *s) { this->station_raw_ = s; }
@@ -109,6 +121,9 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
   void window_command_(int cmd);
   void window_update_();
   void set_window_(int8_t state);
+  float position_();
+  void move_(int8_t dir, uint32_t delay);
+  void publish_position_();
   void gain_trial_(bool station);
   void gain_result_(bool answered);
 
@@ -146,13 +161,23 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
   uint16_t n_{0};
   int counter_check_{-1};
 
-  // the window (README: Window state): -1 unknown, 0 closed, 1 open
+  // the window (README: Window state and Window position)
   float open_above_{NAN};
   float outside_lock_{NAN};
   float wind_limit_{NAN};
   bool rain_alarm_{true};
-  uint32_t travel_ms_{40000};
-  int8_t window_{-1};
+  uint32_t open_ms_{26000};
+  uint32_t close_ms_{19000};
+  uint32_t start_delay_ms_{1000};
+  int8_t window_{-1};  // -1 unknown, 0 closed, 1 open (some or all the way)
+  // the position (0 closed, 1 open, NAN unknown): pos_ when the motor started (or starts: move_ms_) to move in
+  // direction dir_ (1 opening, -1 closing, 0 still)
+  float pos_{NAN};
+  int8_t dir_{0};
+  uint32_t move_ms_{0};
+  float target_{NAN};  // stop here (move_to between 0 and 1)
+  float pending_target_{NAN};  // the same, until the open or close is confirmed
+  uint32_t publish_ms_{0};
   int8_t auto_mode_on_{-1};  // the station's mode: -1 not heard yet
   int8_t warm_{-1};    // A: the inside temperature was above open_above and not yet 2 °C below it (-1: not known)
   int8_t locked_{-1};  // B: the outside temperature was below outside_lock and not yet 2 °C above it
@@ -161,9 +186,7 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
   bool windy_{false};  // C: the wind was above wind_alarm in the last 5 minutes
   uint32_t windy_ms_{0};
   uint32_t command_ms_{0};  // the last open, stop or close
-  int last_move_{-1};  // the last open or close (a command or the station's own), for a stop after it
-  uint32_t last_move_ms_{0};
-  ESPPreferenceObject window_pref_;
+  ESPPreferenceObject position_pref_;
 
   // the gain calibration (elsner_arexa.cpp, fix_gain_ and gain_trial_): DVGA steps left out, 0..GAIN_LEVEL_MAX
   static const uint8_t GAIN_LEVEL_MAX = 3;
@@ -220,6 +243,9 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
   text_sensor::TextSensor *window_text_{nullptr};
   std::string pairing_seen_;
 #endif
+#ifdef USE_COVER
+  cover::Cover *cover_{nullptr};
+#endif
 };
 
 #ifdef USE_BUTTON
@@ -239,6 +265,29 @@ class ArexaButton : public button::Button, public Parented<ElsnerArexa> {
 class ArexaAutoModeSwitch : public switch_::Switch, public Parented<ElsnerArexa> {
  protected:
   void write_state(bool state) override { this->parent_->send_command(state ? CMD_AUTO : CMD_MANUAL); }
+};
+#endif
+
+#ifdef USE_COVER
+// The window as a cover: the position is worked out from the commands, the station's own moves and the timing
+// (README: Window position); nothing measures it.
+class ArexaCover : public cover::Cover, public Parented<ElsnerArexa> {
+ public:
+  cover::CoverTraits get_traits() override {
+    auto traits = cover::CoverTraits();
+    traits.set_supports_position(true);
+    traits.set_supports_stop(true);
+    traits.set_is_assumed_state(true);  // an estimate: open and close always available
+    return traits;
+  }
+
+ protected:
+  void control(const cover::CoverCall &call) override {
+    if (call.get_stop())
+      this->parent_->send_command(CMD_STOP);
+    if (call.get_position().has_value())
+      this->parent_->move_to(*call.get_position());
+  }
 };
 #endif
 
