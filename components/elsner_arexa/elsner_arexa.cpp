@@ -157,6 +157,13 @@ void ElsnerArexa::start_listening() {
   r->set_packet_mode(true);
   r->set_output_power(this->output_power_);
   r->set_max_dvga_gain(static_cast<cc1101::MaxDvgaGain>(this->gain_level_));  // see fix_gain_
+  // while sending, the AGC: with the gain fixed right after my own packet the station's answers were never heard (0 of
+  // about 20 sends, 3 of 3 with the AGC, 2026-11-26); finish_ fixes it again
+  if (this->cmd_ >= 0) {
+    r->set_freeze(cc1101::Freeze::FREEZE_DEFAULT);
+    r->begin_rx();
+    return;
+  }
   this->fix_gain_();
 }
 
@@ -480,6 +487,7 @@ void ElsnerArexa::finish_(const char *result) {
 #endif
   this->cmd_ = -1;
   this->resync_ = false;
+  this->fix_gain_();
 }
 
 // A fresh frame: the command with the next counter (the station takes a packet only if its counter is newer than the
