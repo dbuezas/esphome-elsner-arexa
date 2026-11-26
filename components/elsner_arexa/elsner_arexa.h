@@ -110,6 +110,10 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
 
  protected:
   void decode_(const std::vector<uint8_t> &x, float rssi, float freq_offset);
+  void learn_pairing_(const uint8_t *v);
+  void take_counter_(const uint8_t *v, bool from_station);
+  void decode_rc_(const uint8_t *v, const uint8_t *u, float rssi, float freq_offset);
+  void decode_station_(const uint8_t *v, const uint8_t *u, float rssi, float freq_offset);
   void new_send_();
   void transmit_();
   void finish_(const char *result);

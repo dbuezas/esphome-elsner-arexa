@@ -81,6 +81,12 @@ static uint16_t counter_of(const uint8_t *v) {
 }
 static uint8_t counter_check_of(const uint8_t *v) { return v[7] + 2 * (v[6] + 2 * v[5]); }
 
+// A 16-bit value from the running sum u (decode_): (b0 - u[k]) | (b1 - u[k+1]) << 8, with bases per value (README:
+// Values).
+static uint16_t value16(const uint8_t *u, int k, uint8_t b0, uint8_t b1) {
+  return static_cast<uint8_t>(b0 - u[k]) | static_cast<uint8_t>(b1 - u[k + 1]) << 8;
+}
+
 // the pairing: pairing[0..8] = the values of bytes 8..16 of the RC's packets: 8, 9 the system ID (repeated in 13, 14), 10 the RC's
 // address, 15 the station's address (the RC's packets go to the station), 11, 12, 16 the device type
 void ElsnerArexa::use_pairing_(const uint8_t *pairing) {
@@ -282,24 +288,8 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
            fixed ? ", one bit repaired" : "");
 
   // not from a repaired packet: a wrong pairing would stay until a reboot
-  const bool rc_status = !fixed && v[17] == 0x6a && v[18] == 0x30 && v[19] == 0x30 && v[20] == 0x30;
-  if (rc_status) {
-#ifdef USE_TEXT_SENSOR
-    // the pairing of the RC heard on the air (also with a fixed pairing: to see what arrives)
-    char hex[21];
-    for (int i = 0; i < 9; i++)
-      snprintf(hex + 2 * i, 3, "%02x", v[8 + i]);
-    snprintf(hex + 18, 3, "%02x", counter_check_of(v));
-    if (this->pairing_text_ != nullptr && this->pairing_seen_ != hex) {
-      this->pairing_seen_ = hex;
-      this->pairing_text_->publish_state(hex);
-    }
-#endif
-    if (!this->learned_) {
-      this->use_pairing_(v + 8);
-      ESP_LOGI(TAG, "Learned my RC: system ID %02x%02x, RC address %02x, station address %02x", v[8], v[9], v[10], v[15]);
-    }
-  }
+  if (!fixed && v[17] == 0x6a && v[18] == 0x30 && v[19] == 0x30 && v[20] == 0x30)
+    this->learn_pairing_(v);
   if (!this->learned_)
     return;
 
@@ -317,127 +307,154 @@ void ElsnerArexa::decode_(const std::vector<uint8_t> &x, float rssi, float freq_
     return;
   }
 
-  // The counter (RC and station share it, README: Counter). The station takes a packet whose counter is newer (lower,
-  // mod 2^16) than its last one, and a resync sets it to any value: so its packets always bring the current counter,
-  // the RC's only a newer one (after a command, the RC repeats its stale status before it resyncs).
-  if (this->counter_check_ < 0)
-    this->counter_check_ = counter_check_of(v);
-  if (counter_check_of(v) != this->counter_check_) {
-    ESP_LOGD(TAG, "Counter check %02x, not %02x: counter not taken", counter_check_of(v), this->counter_check_);
-  } else {
-    const uint16_t n = counter_of(v);
-    if (!this->have_counter_ || sender == this->station_address_ || static_cast<int16_t>(this->n_ - n) > 0) {
-      this->n_ = n;
-      this->have_counter_ = true;
-    }
-  }
+  this->take_counter_(v, sender == this->station_address_);
 
-  // Value bytes 17..35: with the running sum u[k] = v[k] + 2 u[k-1] from byte 17 on, each value is a plain number;
-  // 16 bits: (b0 - u[k]) | (b1 - u[k+1]) << 8, with bases per value (README: Values).
+  // Value bytes 17..35: with the running sum u[k] = v[k] + 2 u[k-1] from byte 17 on, each value is a plain number
+  // (see value16).
   uint8_t u[36] = {0};
   u[17] = v[17];
   for (int k = 18; k < 36; k++)
     u[k] = v[k] + 2 * u[k - 1];
-  auto value16 = [&u](int k, uint8_t b0, uint8_t b1) -> uint16_t {
-    return static_cast<uint8_t>(b0 - u[k]) | static_cast<uint8_t>(b1 - u[k + 1]) << 8;
-  };
+  if (sender == this->rc_address_)
+    this->decode_rc_(v, u, rssi, freq_offset);
+  else if (sender == this->station_address_)
+    this->decode_station_(v, u, rssi, freq_offset);
+}
 
-  if (sender == this->rc_address_) {
-#ifdef USE_SENSOR
-    if (this->rc_rssi_ != nullptr)
-      this->rc_rssi_->publish_state(rssi);
-    if (this->rc_freq_offset_ != nullptr)
-      this->rc_freq_offset_->publish_state(freq_offset / 1000.0f);
-#endif
-    if (v[17] == 0x6a && v[18] == 0x30) {  // status: the RC's own temperature sensor
-      const float inside = static_cast<int16_t>(value16(22, 0x40, 0x80)) / 10.0f;
-      if (inside > this->open_above_)
-        this->warm_ = 1;
-      else if (inside < this->open_above_ - 2)
-        this->warm_ = 0;
-      this->window_update_();
-#ifdef USE_SENSOR
-      if (this->inside_temperature_ != nullptr)
-        this->inside_temperature_->publish_state(inside);
-      if (this->raw_inside_ != nullptr)
-        this->raw_inside_->publish_state(v[22]);
-#endif
-      return;
-    }
-    int cmd = -1;
-    for (int i = 0; i < 5; i++)
-      if (v[17] == COMMANDS[i][0] && v[18] == COMMANDS[i][1])
-        cmd = i;
-    if (cmd < 0)
-      return;  // for example the start-up packet after a battery change
-    // the RC repeats a command with the same counter until the station answers: one event per press
-    const int counter = counter_of(v);
-    if (cmd == this->last_remote_ && counter == this->last_remote_counter_)
-      return;
-    this->last_remote_ = cmd;
-    this->last_remote_counter_ = counter;
-    ESP_LOGD(TAG, "RC button: %s", COMMAND_NAMES[cmd]);
-    this->window_command_(cmd);
-#ifdef USE_EVENT
-    if (this->remote_ != nullptr)
-      this->remote_->trigger(COMMAND_NAMES[cmd]);
-#endif
-  } else if (sender == this->station_address_) {
-    this->check_answer_(v);
-    if (this->cmd_ < 0)
-      this->fix_gain_();
-    // the rest is the station's status: not a resync answer or a start-up packet after a battery change (both have
-    // 00/ff in bytes 31..35)
-    if (v[31] != 0x30 || v[32] != 0x30)
-      return;
-    const float outside = static_cast<int16_t>(value16(17, 0x9a, 0x34)) / 10.0f;
-    const float wind = value16(19, 0x68, 0xd0) / 10.0f;
-    if (outside < this->outside_lock_)
-      this->locked_ = 1;
-    else if (outside > this->outside_lock_ + 2)
-      this->locked_ = 0;
-    if (wind > this->wind_limit_) {
-      this->windy_ = true;
-      this->windy_ms_ = millis();
-    }
-    this->raining_ = u[21] < 0x50;    // 0x52 dry, 0x4e while the rain alarm holds
-    this->wind_flag_ = u[27] != 0xb2;  // 0xb2 calm, 0xa9 while the wind alarm holds
+void ElsnerArexa::learn_pairing_(const uint8_t *v) {
 #ifdef USE_TEXT_SENSOR
-    if (this->station_raw_ != nullptr) {
-      char hex[3 * 19];
-      for (int k = 17; k < 36; k++)
-        snprintf(hex + 3 * (k - 17), 4, k < 35 ? "%02x " : "%02x", v[k]);
-      this->station_raw_->publish_state(hex);
-    }
+  // the pairing of the RC heard on the air (also with a fixed pairing: to see what arrives)
+  char hex[21];
+  for (int i = 0; i < 9; i++)
+    snprintf(hex + 2 * i, 3, "%02x", v[8 + i]);
+  snprintf(hex + 18, 3, "%02x", counter_check_of(v));
+  if (this->pairing_text_ != nullptr && this->pairing_seen_ != hex) {
+    this->pairing_seen_ = hex;
+    this->pairing_text_->publish_state(hex);
+  }
+#endif
+  if (!this->learned_) {
+    this->use_pairing_(v + 8);
+    ESP_LOGI(TAG, "Learned my RC: system ID %02x%02x, RC address %02x, station address %02x", v[8], v[9], v[10], v[15]);
+  }
+}
+
+// The counter (RC and station share it, README: Counter). The station takes a packet whose counter is newer (lower,
+// mod 2^16) than its last one, and a resync sets it to any value: so its packets always bring the current counter,
+// the RC's only a newer one (after a command, the RC repeats its stale status before it resyncs).
+void ElsnerArexa::take_counter_(const uint8_t *v, bool from_station) {
+  if (this->counter_check_ < 0)
+    this->counter_check_ = counter_check_of(v);
+  if (counter_check_of(v) != this->counter_check_) {
+    ESP_LOGD(TAG, "Counter check %02x, not %02x: counter not taken", counter_check_of(v), this->counter_check_);
+    return;
+  }
+  const uint16_t n = counter_of(v);
+  if (!this->have_counter_ || from_station || static_cast<int16_t>(this->n_ - n) > 0) {
+    this->n_ = n;
+    this->have_counter_ = true;
+  }
+}
+
+// The RC's packets: its status once a minute (with its temperature sensor) and the button presses.
+void ElsnerArexa::decode_rc_(const uint8_t *v, const uint8_t *u, float rssi, float freq_offset) {
+#ifdef USE_SENSOR
+  if (this->rc_rssi_ != nullptr)
+    this->rc_rssi_->publish_state(rssi);
+  if (this->rc_freq_offset_ != nullptr)
+    this->rc_freq_offset_->publish_state(freq_offset / 1000.0f);
+#endif
+  if (v[17] == 0x6a && v[18] == 0x30) {  // status: the RC's own temperature sensor
+    const float inside = static_cast<int16_t>(value16(u, 22, 0x40, 0x80)) / 10.0f;
+    if (inside > this->open_above_)
+      this->warm_ = 1;
+    else if (inside < this->open_above_ - 2)
+      this->warm_ = 0;
+    this->window_update_();
+#ifdef USE_SENSOR
+    if (this->inside_temperature_ != nullptr)
+      this->inside_temperature_->publish_state(inside);
+    if (this->raw_inside_ != nullptr)
+      this->raw_inside_->publish_state(v[22]);
+#endif
+    return;
+  }
+  int cmd = -1;
+  for (int i = 0; i < 5; i++)
+    if (v[17] == COMMANDS[i][0] && v[18] == COMMANDS[i][1])
+      cmd = i;
+  if (cmd < 0)
+    return;  // for example the start-up packet after a battery change
+  // the RC repeats a command with the same counter until the station answers: one event per press
+  const int counter = counter_of(v);
+  if (cmd == this->last_remote_ && counter == this->last_remote_counter_)
+    return;
+  this->last_remote_ = cmd;
+  this->last_remote_counter_ = counter;
+  ESP_LOGD(TAG, "RC button: %s", COMMAND_NAMES[cmd]);
+  this->window_command_(cmd);
+#ifdef USE_EVENT
+  if (this->remote_ != nullptr)
+    this->remote_->trigger(COMMAND_NAMES[cmd]);
+#endif
+}
+
+// The station's packets: an answer to every packet it takes, with its weather values and mode.
+void ElsnerArexa::decode_station_(const uint8_t *v, const uint8_t *u, float rssi, float freq_offset) {
+  this->check_answer_(v);
+  if (this->cmd_ < 0)
+    this->fix_gain_();
+  // the rest is the station's status: not a resync answer or a start-up packet after a battery change (both have
+  // 00/ff in bytes 31..35)
+  if (v[31] != 0x30 || v[32] != 0x30)
+    return;
+  const float outside = static_cast<int16_t>(value16(u, 17, 0x9a, 0x34)) / 10.0f;
+  const float wind = value16(u, 19, 0x68, 0xd0) / 10.0f;
+  if (outside < this->outside_lock_)
+    this->locked_ = 1;
+  else if (outside > this->outside_lock_ + 2)
+    this->locked_ = 0;
+  if (wind > this->wind_limit_) {
+    this->windy_ = true;
+    this->windy_ms_ = millis();
+  }
+  this->raining_ = u[21] < 0x50;    // 0x52 dry, 0x4e while the rain alarm holds
+  this->wind_flag_ = u[27] != 0xb2;  // 0xb2 calm, 0xa9 while the wind alarm holds
+#ifdef USE_TEXT_SENSOR
+  if (this->station_raw_ != nullptr) {
+    char hex[3 * 19];
+    for (int k = 17; k < 36; k++)
+      snprintf(hex + 3 * (k - 17), 4, k < 35 ? "%02x " : "%02x", v[k]);
+    this->station_raw_->publish_state(hex);
+  }
 #endif
 #ifdef USE_SENSOR
-    if (this->station_rssi_ != nullptr)
-      this->station_rssi_->publish_state(rssi);
-    if (this->station_freq_offset_ != nullptr)
-      this->station_freq_offset_->publish_state(freq_offset / 1000.0f);
-    if (this->outside_temperature_ != nullptr)
-      this->outside_temperature_->publish_state(outside);
-    if (this->raw_outside_ != nullptr)
-      this->raw_outside_->publish_state(v[17]);
-    if (this->wind_ != nullptr)
-      this->wind_->publish_state(wind);
-    // about 1.05 lx per step (calibrated against the RC's klux display)
-    const uint16_t bright = value16(22, 0x3c, 0x80);
-    if (this->brightness_ != nullptr)
-      this->brightness_->publish_state(bright * (270.0f / 256.0f));
-    if (this->raw_brightness_ != nullptr)
-      this->raw_brightness_->publish_state(bright);
-    if (this->rain_sensor_ != nullptr)
-      this->rain_sensor_->publish_state(u[29]);  // 0xbc in every packet so far, rain or not
+  if (this->station_rssi_ != nullptr)
+    this->station_rssi_->publish_state(rssi);
+  if (this->station_freq_offset_ != nullptr)
+    this->station_freq_offset_->publish_state(freq_offset / 1000.0f);
+  if (this->outside_temperature_ != nullptr)
+    this->outside_temperature_->publish_state(outside);
+  if (this->raw_outside_ != nullptr)
+    this->raw_outside_->publish_state(v[17]);
+  if (this->wind_ != nullptr)
+    this->wind_->publish_state(wind);
+  // about 1.05 lx per step (calibrated against the RC's klux display)
+  const uint16_t bright = value16(u, 22, 0x3c, 0x80);
+  if (this->brightness_ != nullptr)
+    this->brightness_->publish_state(bright * (270.0f / 256.0f));
+  if (this->raw_brightness_ != nullptr)
+    this->raw_brightness_->publish_state(bright);
+  if (this->rain_sensor_ != nullptr)
+    this->rain_sensor_->publish_state(u[29]);  // 0xbc in every packet so far, rain or not
 #endif
 #ifdef USE_BINARY_SENSOR
-    if (this->rain_ != nullptr)
-      this->rain_->publish_state(this->raining_);
-    if (this->wind_alarm_ != nullptr)
-      this->wind_alarm_->publish_state(this->wind_flag_);
+  if (this->rain_ != nullptr)
+    this->rain_->publish_state(this->raining_);
+  if (this->wind_alarm_ != nullptr)
+    this->wind_alarm_->publish_state(this->wind_flag_);
 #endif
-    this->publish_mode_(u[25]);
-  }
+  this->publish_mode_(u[25]);
 }
 
 // The answer to the command being sent carries its counter. The station answers with its state from before the
