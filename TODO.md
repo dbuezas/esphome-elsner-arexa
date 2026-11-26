@@ -37,6 +37,9 @@ release). Ordered by priority.
   Nov 11..19, independent of the rain alarm), not byte 28; seen live on 2026-11-23. Bytes 28, 29 never changed
   (the `rain_sensor` still publishes 29). Below 0 °C seen (-1.5 °C), matching Tempelhof.
 
+- Done on 2026-11-26: sends confirmed again (the fixed gain right after my own packet lost every answer since
+  2026-11-08; now the AGC while sending). #9 tested: a Stop on the RC, sent 6 times, gave one event.
+
 - Done on 2026-11-04: receiving with the chip's Manchester decoder (sync `ce ad`, 36 bytes, stock cc1101 driver),
   only packets with a matching CRC. Measured against raw chips (4 h alternating): station CRC ok in 42% of RC
   minutes against 29%. Also tried: sync on a later header byte (`ba`, raw): worse than `ce` (46% against 58%).
@@ -93,6 +96,5 @@ broken ones have 1 or 2 wrong bits; a few lose the bit timing (50+ wrong bits) o
 
 - The command list exists four times in an order that must match (now noted at each). Generate from one list?
 - Wind: a 16-bit value like the temperature (README: Values), so above 25.5 m/s should just work; not seen yet.
-- #9 (RC presses de-duplicated by counter) is untested: press a button on the real RC and check one event per press.
 - The scrambler's 31 masks (README: Scrambling) follow a shift pattern but no short recurrence I found; a generator
   would replace the table.
