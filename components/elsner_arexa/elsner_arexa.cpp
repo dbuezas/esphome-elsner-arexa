@@ -664,13 +664,14 @@ void ElsnerArexa::move_(int8_t dir, uint32_t delay) {
 
 void ElsnerArexa::move_to(float position) {
   const float p = this->position_();
+  // 0 and 1 (close and open): no stop at all, the motor runs to its own end; only a position in between stops on time
   float target = NAN;
-  if (position > 0.01f && position < 0.99f) {
+  if (position > 0.0f && position < 1.0f) {
     if (!std::isnan(p) && std::abs(position - p) < 0.02f)
       return;
     target = position;
   }
-  const bool open = position >= 0.99f || (!std::isnan(target) && (std::isnan(p) ? position > 0.5f : position > p));
+  const bool open = position >= 1.0f || (!std::isnan(target) && (std::isnan(p) ? position > 0.5f : position > p));
   // from an unknown position: all the way first
   if (std::isnan(p) && !std::isnan(target))
     target = NAN;
