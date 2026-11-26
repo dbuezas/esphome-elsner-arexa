@@ -33,6 +33,10 @@ release). Ordered by priority.
   resyncs). The pairing check for typos. Station bytes 22, 23 (the brightness's low byte), 26 (a check byte of the
   mode) and the wind below 0 °C (byte 19 also holds the temperature's high part) decoded.
 
+- Done on 2026-11-19: the wind alarm is byte 27 (`b2` calm, `a9` for about 5 minutes after a gust; 18 times in
+  Nov 11..19, independent of the rain alarm), not byte 28; seen live on 2026-11-23. Bytes 28, 29 never changed
+  (the `rain_sensor` still publishes 29). Below 0 °C seen (-1.5 °C), matching Tempelhof.
+
 - Done on 2026-11-04: receiving with the chip's Manchester decoder (sync `ce ad`, 36 bytes, stock cc1101 driver),
   only packets with a matching CRC. Measured against raw chips (4 h alternating): station CRC ok in 42% of RC
   minutes against 29%. Also tried: sync on a later header byte (`ba`, raw): worse than `ce` (46% against 58%).
