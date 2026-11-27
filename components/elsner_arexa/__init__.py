@@ -11,6 +11,8 @@ CONF_CC1101_ID = "cc1101_id"
 CONF_ELSNER_AREXA_ID = "elsner_arexa_id"
 CONF_PAIRING = "pairing"
 CONF_SETTINGS = "settings"
+CONF_RX_ATTENUATION = "rx_attenuation"
+RX_ATTENUATIONS = ["0dB", "6dB", "12dB", "18dB"]  # the order of cc1101::RxAttenuation
 CONF_OPEN_ABOVE = "open_above"
 CONF_OUTSIDE_LOCK = "outside_lock"
 CONF_WIND_ALARM = "wind_alarm"
@@ -76,6 +78,10 @@ CONFIG_SCHEMA = cv.Schema(
             cv.frequency, cv.float_range(min=867.9e6, max=868.5e6)
         ),
         cv.Optional(CONF_OUTPUT_POWER, default=11): cv.float_range(min=-30.0, max=11.0),
+        # The chip's input attenuator. With the station a few metres away, most of its packets are lost at 0dB and
+        # nearly all arrive at 6dB (README: Accuracy). 0dB for a station far away (the chip then hears 6 dB weaker
+        # signals).
+        cv.Optional(CONF_RX_ATTENUATION, default="6dB"): cv.one_of(*RX_ATTENUATIONS),
         # auto: learn it from the RC's packets. Or fix it (the value of the pairing text sensor), then the buttons
         # work as soon as any Arexa packet brought the counter.
         cv.Optional(CONF_PAIRING, default="auto"): validate_pairing,
@@ -91,6 +97,13 @@ async def to_code(config):
     cg.add(var.set_radio(radio))
     cg.add(var.set_frequency(config[CONF_FREQUENCY]))
     cg.add(var.set_output_power(config[CONF_OUTPUT_POWER]))
+    cg.add(
+        var.set_rx_attenuation(
+            cg.RawExpression(
+                f"static_cast<esphome::cc1101::RxAttenuation>({RX_ATTENUATIONS.index(config[CONF_RX_ATTENUATION])})"
+            )
+        )
+    )
     settings = config[CONF_SETTINGS]
     for key in (CONF_OPEN_ABOVE, CONF_OUTSIDE_LOCK, CONF_WIND_ALARM):
         if settings[key] is not None:

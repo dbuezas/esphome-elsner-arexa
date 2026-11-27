@@ -69,7 +69,7 @@ below 0 °C it is seen and works. To do: check on a hot day.
   syncs). In a miss the station packet arrives but its start (preamble, `ce`, `ad`) is broken and the radio locks on
   later inside it (measured with raw chips).
 
-### 13. Station packets with wrong bits: solved (the AGC)
+### 13. Station packets with wrong bits (the fixed gain: replaced, see 14)
 About 40% of the station's packets came with wrong bits, at -64 dBm, 4 m away; the RC's never. Not the cause (each
 tested 4 to 12 hours alternating, 2026-11-04..06): ESP activity and WiFi (even WiFi off), the two 433 MHz radios
 (idle), background noise, centre frequency (+-5 kHz), deviation (34.9 to 47.6 kHz), bit-sync gains, TI's AGC
@@ -94,7 +94,7 @@ deviation 41.3 kHz with filter 232 kHz gave 83% clean, 94% usable, against 76% a
 better; 325 kHz and +-5 kHz worse), so that is the default now. Rebuilt from neighbouring clean packets, most
 broken ones have 1 or 2 wrong bits; a few lose the bit timing (50+ wrong bits) or have a short burst (9-17).
 
-### 14. The station's packets the 868 module misses (2026-11-26, against an RTL-SDR)
+### 14. The station's packets the 868 module missed: solved (the input attenuator, the DC filter)
 An RTL-SDR (farther away, a plain monopole) decoded 100% of the RC's, the station's and my packets; the gateway got
 44-61% of the station's (most missed entirely, the rest with 2-5 wrong bits spread over the packet), the RC's 85-95%.
 The station's signal is the cleanest of the three (tones +-46 kHz, 4-5 kHz jitter, +5 kHz from my TX, chip rate
@@ -103,9 +103,24 @@ The station's signal is the cleanest of the three (tones +-46 kHz, 4-5 kHz jitte
 gap (handling packets 30 ms later the same), TI's 100 kBaud demodulator and AGC values, FOC gated or off, FREND1,
 FSCAL/TEST0, deviation 47.6 kHz, other gain caps. Helped: TEST2/TEST1 0x81/0x35 (now the default), 61% against 44%.
 Polling the chip's status during a packet breaks the packet (SPI activity), so no probing that way.
-Strongest lead: on 2026-11-05 the 433.30 module tuned to 868 MHz got 175 of 177 station answers clean at -84 dBm,
-the 868 module 41%, same board and code. So the 868 module, its antenna or its place on the board. To do: try the
-module or the antenna swapped, or the SDR antenna right at the gateway (does it still get them all there?).
+Solved on 2026-11-27 (the same method, 5 to 45 minutes per round, 30 to 100 station answers per setup):
+- The input attenuator (FIFOTHR.CLOSE_IN_RX): 0 dB 27-44%, 6 dB 83-97%, 12 dB 89-94%, 18 dB 87%. Lower gain behind
+  it does nothing (LNA limits -6.1/-11.5/-17.1 dB: 62/31/27%), so it is not the level at the demodulator.
+- The DC blocking filter off (MDMCFG2.DEM_DCFILT_OFF): 56-78% against 32% at 0 dB, 97-98% against 83% with 6 dB.
+- With both: IF 153, 203 or 254 kHz, the AGC frozen on sync or not, TEST2/TEST1 at TI's or the reset values: all
+  93-100%, no difference left to measure. Kept: IF 153 kHz, the AGC as by default, TI's TEST2/TEST1.
+- So the fixed gain and its special case while sending are gone (the AGC runs).
+Not the cause either: the 433 MHz radios (asleep during a command: 43% against 42%), Wi-Fi (no ESP traffic around
+the answer: 28% against 36%; the level in the channel is the same after a Wi-Fi send), the AGC stepping during the
+packet (frozen on sync: 17-36%), the packet's content or its signal (lost and received ones look the same on the
+SDR: level, frequency, deviation, start, timing). The broken packets (181 compared with the SDR's copy): mostly 2
+wrong bits next to each other, twice as many in the first half, a 0 read as 1 more often than the reverse.
+The shipped setup, 31 minutes against the SDR: the station's answers to my sends 94 of 96, to the RC 18 of 18, the
+RC's packets 93 of 94; 2 of 220 frames broken or repaired.
+Not understood: why these two settings. The level is not it (the RC is as strong and arrives at 0 dB). What differs
+is that the station answers 6.6 ms after another packet. On 2026-11-05 the 433.30 module tuned to 868 MHz got 175 of
+177 answers at -84 dBm: with 24 dB less signal, like a strong attenuator.
+An on-device test script (the ESP pressing its own buttons) crashed in a log call: not looked into.
 
 ## Low
 

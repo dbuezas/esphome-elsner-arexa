@@ -21,7 +21,6 @@ static const uint8_t INV[36] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 
 static const uint8_t HEADER[4] = {0xce, 0xad, 0x93, 0xba};
 // frame bytes 0..37 (36, 37 the CRC)
 static constexpr int N = 38;
-static constexpr int DVGA_STEPS_LEFT_OUT = 3;  // see fix_gain_
 // RC commands: values of bytes 17, 18, 19 (the same on a second installation's Solexa recordings)
 static const uint8_t COMMANDS[5][3] = {
     {0x25, 0xba, 0x30},  // open
@@ -113,11 +112,11 @@ void ElsnerArexa::setup() {
     return;
   }
   this->radio_->register_listener(this);
-  // the slot of the old gain calibration's level: on the ESP8266 the order of make_preference places the later ones
+  // the slot of a removed setting: on the ESP8266 the order of make_preference places the later ones
   global_preferences->make_preference<uint8_t>(fnv1_hash("elsner_arexa_gain_5ms"));
-  // TEST2/TEST1 as TI gives them for RX filters below 325 kHz (the driver keeps the reset values, meant for wider
-  // ones): 61% of the station's packets usable against 44%, measured against an SDR that got them all (2026-11-26,
-  // alternating per send). The driver writes these registers only in its own setup, so once is enough.
+  // TEST2/TEST1 as TI gives them for RX filters up to 325 kHz (DN022; the driver keeps the reset values, meant for
+  // wider ones): with the reset values fewer of the station's packets arrive (75% against 92%). The driver writes
+  // these registers only in its own setup, so once is enough.
   this->write_register_(0x2C, 0x81);  // TEST2
   this->write_register_(0x2D, 0x35);  // TEST1
   this->start_listening();
@@ -140,20 +139,19 @@ void ElsnerArexa::setup() {
     App.set_loop_interval(2);
 }
 
-// Receive settings. The chips are 10.000 us (100 kbaud), 2-FSK with ~+-35 kHz deviation, Manchester coded (1 = chips
-// 10, 0 = 01); the chip decodes the Manchester. The preamble is only ~13 alternating chips, which fit both chip
-// phases: the sync word, the first two frame bytes ce ad, fixes the phase. Then 36 bytes: frame bytes 2..37, with
-// the CRC. Measured against raw chips decoded here (sync on the 16 chips of ce): 42% against 29% of the station's
-// packets with a matching CRC (2026-11-04, 4 h alternating). Deviation 41.3 kHz and filter 232 kHz (were 47.6 and
-// 270): 83% of the station's packets clean against 76%, 94% usable against 91%, the RC's the same (10 h alternating
-// with the fixed gain, 2026-11-09; each alone no better, 325 kHz and +-5 kHz worse).
+// Receive settings. The chips are 10.000 us (100 kbaud), 2-FSK, Manchester coded (1 = chips 10, 0 = 01); the chip
+// decodes the Manchester. The preamble is only ~13 alternating chips, which fit both chip phases: the sync word, the
+// first two frame bytes ce ad, fixes the phase. Then 36 bytes: frame bytes 2..37, with the CRC.
+// The numbers are measured, not derived (README: Accuracy; TODO.md has the history): against an SDR that got every
+// packet, 97% of the station's answers arrive with these, and about a third with the driver's defaults for the
+// attenuator and the DC filter.
 void ElsnerArexa::start_listening() {
   auto *r = this->radio_;
   r->set_frequency(this->frequency_);
   r->set_modulation_type(cc1101::Modulation::MODULATION_2_FSK);
   r->set_symbol_rate(100000);
-  r->set_fsk_deviation(41.3e3f);
-  r->set_filter_bandwidth(232e3f);
+  r->set_fsk_deviation(41.3e3f);  // the senders swing +-33 to +-46 kHz; 47.6 kHz was worse
+  r->set_filter_bandwidth(232e3f);  // 270 and 325 kHz were worse
   r->set_sync_mode(cc1101::SyncMode::SYNC_MODE_16_16);
   r->set_manchester(true);
   r->set_sync1(HEADER[0]);
@@ -166,38 +164,14 @@ void ElsnerArexa::start_listening() {
   r->set_packet_length(N - 2);
   r->set_packet_mode(true);
   r->set_output_power(this->output_power_);
-  r->set_max_dvga_gain(static_cast<cc1101::MaxDvgaGain>(DVGA_STEPS_LEFT_OUT));  // see fix_gain_
-  // while sending, the AGC: with the gain fixed right after my own packet the station's answers were never heard (0 of
-  // about 20 sends, 3 of 3 with the AGC, 2026-11-26); finish_ fixes it again
-  if (this->cmd_ >= 0) {
-    r->set_freeze(cc1101::Freeze::FREEZE_DEFAULT);
-    r->begin_rx();
-    return;
-  }
-  this->fix_gain_();
-}
-
-// The gain is fixed (no AGC): 5 ms of receiving noise bring it up to its limit, then it is frozen. With the AGC
-// frozen on the sync word, the gain was still low from the RC's packet when the station answered 8 ms later, 16 dB
-// weaker: 43% of its packets came with wrong bits, against 6% with the gain fixed (2026-11-06, 4 h alternating);
-// holding the gain the AGC found on a station packet fails too (the preamble, 13 chips, is too short for it to
-// settle), and with the AGC running all the time half of the station's packets broke. FSK needs no gain control: the
-// bits are in the frequency. Done again after each station packet (the next RC packet is a minute away), in case a
-// signal was there while the gain settled.
-// The limit (the DVGA's 3 highest steps left out) makes the gain the same every time: the noise always
-// brings it to the limit. Without one, or with only 1 ms to climb, it stopped at different levels (the RC's RSSI
-// jumped between -67, -57 and -54 dBm), and the higher ones broke the station's packets. With 5 ms and 3 steps left
-// out: the same level at 25 of 26 fixings and 93% of the station's packets usable, against 88% and 20 of 24 with
-// 1 ms and 2 steps; 3 steps and the LNA's 6 dB left out: 63% (2026-11-08, 2 h alternating, fixed again every
-// minute). Measured again against an SDR (2026-11-26): 2 steps 28%, 3 steps 36%, 3 steps and LNA -2.6 dB 41%, the
-// AGC free 26% (alternating per send, a weak evening); a calibration that compared levels by the answers counted
-// ended up on 2.
-void ElsnerArexa::fix_gain_() {
-  auto *r = this->radio_;
+  // Two settings make the station's packets arrive (it answers a few ms after another packet; the RC's come through
+  // either way): the attenuator at the chip's input (lower gain behind it, LNA or DVGA limits or a fixed gain, does
+  // not help), and the DC blocking filter off. The AGC runs as the chip does by default; the DVGA's 3 highest steps
+  // stay left out, as in every test with the attenuator.
+  r->set_rx_attenuation(this->rx_attenuation_);
+  r->set_dc_blocking_filter(false);
+  r->set_max_dvga_gain(static_cast<cc1101::MaxDvgaGain>(3));
   r->set_freeze(cc1101::Freeze::FREEZE_DEFAULT);
-  r->begin_rx();
-  delayMicroseconds(5000);
-  r->set_freeze(cc1101::Freeze::FREEZE_ANALOG_AND_DIGITAL);
   r->begin_rx();
 }
 
@@ -402,8 +376,6 @@ void ElsnerArexa::decode_rc_(const uint8_t *v, const uint8_t *u, float rssi, flo
 // The station's packets: an answer to every packet it takes, with its weather values and mode.
 void ElsnerArexa::decode_station_(const uint8_t *v, const uint8_t *u, float rssi, float freq_offset) {
   this->check_answer_(v);
-  if (this->cmd_ < 0)
-    this->fix_gain_();
   // the rest is the station's status: not a resync answer or a start-up packet after a battery change (both have
   // 00/ff in bytes 31..35)
   if (v[31] != 0x30 || v[32] != 0x30)
@@ -541,7 +513,6 @@ void ElsnerArexa::finish_(const char *result) {
 #endif
   this->cmd_ = -1;
   this->resync_ = false;
-  this->fix_gain_();
 }
 
 // A fresh frame: the command with the next counter (the station takes a packet only if its counter is newer than the
@@ -774,7 +745,7 @@ void ElsnerArexa::transmit_() {
 void ElsnerArexa::dump_config() {
   ESP_LOGCONFIG(TAG, "Elsner Arexa:");
   ESP_LOGCONFIG(TAG, "  Frequency: %.3f MHz", this->frequency_ / 1e6f);
-  ESP_LOGCONFIG(TAG, "  Gain: fixed, the DVGA's %d highest steps left out", DVGA_STEPS_LEFT_OUT);
+  ESP_LOGCONFIG(TAG, "  RX attenuation: %d dB", 6 * static_cast<int>(this->rx_attenuation_));
   if (this->learned_)
     ESP_LOGCONFIG(TAG, "  Pairing: system ID %02x%02x, RC address %02x, station address %02x (%s)", this->pairing_[0],
                   this->pairing_[1],

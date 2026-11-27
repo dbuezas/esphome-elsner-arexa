@@ -41,6 +41,8 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
   void set_radio(cc1101::CC1101Component *radio) { this->radio_ = radio; }
   void set_frequency(float frequency) { this->frequency_ = frequency; }
   void set_output_power(float power) { this->output_power_ = power; }
+  // the chip's input attenuator (README: Accuracy): 6 dB unless the station is far away
+  void set_rx_attenuation(cc1101::RxAttenuation a) { this->rx_attenuation_ = a; }
   // the pairing (bytes 8..16, optionally the counter's check byte) to use instead of learning it; see the README
   void set_fixed_pairing(const std::vector<uint8_t> &pairing);
   // the RC's automatic settings (README: Window state); not set: switched off
@@ -118,7 +120,6 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
   void transmit_();
   void finish_(const char *result);
   void check_answer_(const uint8_t *v);
-  void fix_gain_();
   void write_register_(uint8_t address, uint8_t value);
   void publish_frame_(const char *kind, float rssi, const uint8_t *c);
   void publish_mode_(uint8_t mode);
@@ -133,6 +134,7 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
   cc1101::CC1101Component *radio_{nullptr};
   float frequency_{868.19e6f};
   float output_power_{11.0f};
+  cc1101::RxAttenuation rx_attenuation_{cc1101::RxAttenuation::RX_ATTENUATION_6DB};
   struct Received {
     std::vector<uint8_t> bytes;
     float rssi;

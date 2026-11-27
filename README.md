@@ -38,6 +38,7 @@ elsner_arexa:
   cc1101_id: radio_arexa
   # frequency: 868.19MHz   # 868.19 MHz + your module's crystal error, see below
   # output_power: 11
+  # rx_attenuation: 6dB   # 0dB for a station far away, see Accuracy
 
 cover:
   - platform: elsner_arexa
@@ -173,14 +174,16 @@ sensors, the counter and the RC events come only from packets whose CRC matched 
 chips decoded on the ESP (sync on the 16 chips of `ce`, 74 FIFO bytes read while the packet arrives, damaged packets
 used for the fields with a check of their own): over 4 hours alternating, 29% of the station's packets came in
 with a matching CRC that way, against 42% with the chip's decoder. The station answers the RC 14 ms after its packet, so the component sets the main loop interval to 2 ms (the
-default 16 ms misses most answers). The gain is fixed (no AGC): with the AGC, the gain was still low from the
-RC's packet when the station answered, 16 dB weaker, and 43% of its packets came with wrong bits; with the gain
-fixed, 6% (4 hours alternating). FSK needs no gain control (with the AGC running all the time, half of the
-station's packets broke). The gain gets a limit (the DVGA's highest steps left out) and 5 ms to climb to it, so it
-is the same every time: without the limit, or with only 1 ms, it stopped at different levels and the higher ones
-broke the station's packets. Here 3 steps left out work best (93% of the station's packets usable, the same level at
-25 of 26 fixings), and still did against an SDR on 2026-11-26 (2 steps worse); an earlier calibration that compared
-levels by the answers counted settled on a worse one, so the level is fixed. Sending: the chip does
+default 16 ms misses most answers).
+
+Two receive settings decide whether the station's packets arrive (measured against an SDR that decoded every packet,
+the setups alternating per send, 2026-11-27): the chip's input attenuator at 6 dB (`rx_attenuation`) and its DC
+blocking filter off. With the driver's defaults for both, about a third of the station's answers arrived; with the
+attenuator 83%, with the filter off 56 to 78%, with both 97%. The RC's packets arrive either way: the station
+answers a few ms after another packet, the RC sends after a minute of silence. Lower gain behind the attenuator
+(LNA or DVGA limits, a gain fixed below the maximum) did not help, nor did a wider filter, another deviation or
+IF, the AGC frozen on the sync word, or TI's 100 kBaud settings. With the station far away, try `rx_attenuation: 0dB`
+(the chip then hears 6 dB weaker signals). Sending: the chip does
 the Manchester coding itself (an ESP8266 cannot time 10 µs chips in software while WiFi runs).
 
 ## Protocol
