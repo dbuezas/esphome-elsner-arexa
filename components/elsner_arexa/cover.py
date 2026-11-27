@@ -12,14 +12,14 @@ CONF_OPEN_DURATION = "open_duration"
 CONF_CLOSE_DURATION = "close_duration"
 CONF_START_DELAY = "start_delay"
 
-# The window as a cover, its position worked out from the timing (README: Window position). The defaults are my
-# window's (2026-11-26): it opens in 26 s and closes in 19 s once the motor runs, which starts 1 s after a command.
+# The window as a cover, its position worked out from the timing (README: Window position). The timing's defaults are
+# in elsner_arexa.h (the window text sensor uses them without a cover too).
 CONFIG_SCHEMA = cover.cover_schema(ArexaCover, device_class="window", icon="mdi:window-open-variant").extend(
     {
         cv.GenerateID(CONF_ELSNER_AREXA_ID): cv.use_id(ElsnerArexa),
-        cv.Optional(CONF_OPEN_DURATION, default="26s"): cv.positive_time_period_milliseconds,
-        cv.Optional(CONF_CLOSE_DURATION, default="19s"): cv.positive_time_period_milliseconds,
-        cv.Optional(CONF_START_DELAY, default="1s"): cv.positive_time_period_milliseconds,
+        cv.Optional(CONF_OPEN_DURATION): cv.positive_time_period_milliseconds,
+        cv.Optional(CONF_CLOSE_DURATION): cv.positive_time_period_milliseconds,
+        cv.Optional(CONF_START_DELAY): cv.positive_time_period_milliseconds,
     }
 )
 
@@ -29,6 +29,10 @@ async def to_code(config):
     c = await cover.new_cover(config)
     await cg.register_parented(c, hub)
     cg.add(hub.set_cover(c))
-    cg.add(hub.set_open_time(config[CONF_OPEN_DURATION]))
-    cg.add(hub.set_close_time(config[CONF_CLOSE_DURATION]))
-    cg.add(hub.set_start_delay(config[CONF_START_DELAY]))
+    for key, setter in (
+        (CONF_OPEN_DURATION, hub.set_open_time),
+        (CONF_CLOSE_DURATION, hub.set_close_time),
+        (CONF_START_DELAY, hub.set_start_delay),
+    ):
+        if key in config:
+            cg.add(setter(config[key]))

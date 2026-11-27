@@ -1,9 +1,7 @@
-import esphome.codegen as cg
 from esphome.components import binary_sensor
-import esphome.config_validation as cv
 from esphome.const import DEVICE_CLASS_MOISTURE, DEVICE_CLASS_PROBLEM
 
-from . import CONF_ELSNER_AREXA_ID, ElsnerArexa
+from . import types_schema, types_to_code
 
 DEPENDENCIES = ["elsner_arexa"]
 
@@ -15,14 +13,8 @@ TYPES = {
     "auto_mode": binary_sensor.binary_sensor_schema(icon="mdi:refresh-auto"),
 }
 
-CONFIG_SCHEMA = cv.Schema(
-    {cv.GenerateID(CONF_ELSNER_AREXA_ID): cv.use_id(ElsnerArexa), **{cv.Optional(k): v for k, v in TYPES.items()}}
-)
+CONFIG_SCHEMA = types_schema(TYPES)
 
 
 async def to_code(config):
-    hub = await cg.get_variable(config[CONF_ELSNER_AREXA_ID])
-    for key in TYPES:
-        if key in config:
-            s = await binary_sensor.new_binary_sensor(config[key])
-            cg.add(getattr(hub, f"set_{key}_binary_sensor")(s))
+    await types_to_code(config, TYPES, binary_sensor.new_binary_sensor, "binary_sensor")

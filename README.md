@@ -38,7 +38,7 @@ elsner_arexa:
   cc1101_id: radio_arexa
   # frequency: 868.19MHz   # 868.19 MHz + your module's crystal error, see below
   # output_power: 11
-  # rx_attenuation: 6dB   # 0dB for a station far away, see Accuracy
+  # rx_attenuation: 6dB   # see How it works
 
 cover:
   - platform: elsner_arexa

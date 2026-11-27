@@ -12,7 +12,6 @@ CONF_ELSNER_AREXA_ID = "elsner_arexa_id"
 CONF_PAIRING = "pairing"
 CONF_SETTINGS = "settings"
 CONF_RX_ATTENUATION = "rx_attenuation"
-RX_ATTENUATIONS = ["0dB", "6dB", "12dB", "18dB"]  # the order of cc1101::RxAttenuation
 CONF_OPEN_ABOVE = "open_above"
 CONF_OUTSIDE_LOCK = "outside_lock"
 CONF_WIND_ALARM = "wind_alarm"
@@ -22,6 +21,21 @@ COMMANDS = ["open", "stop", "close", "auto", "manual"]
 
 elsner_arexa_ns = cg.esphome_ns.namespace("elsner_arexa")
 ElsnerArexa = elsner_arexa_ns.class_("ElsnerArexa", cg.Component)
+
+
+def types_schema(types):
+    """the schema of a platform with one optional entity per key of types (key: its schema)"""
+    return cv.Schema(
+        {cv.GenerateID(CONF_ELSNER_AREXA_ID): cv.use_id(ElsnerArexa), **{cv.Optional(k): v for k, v in types.items()}}
+    )
+
+
+async def types_to_code(config, types, new_entity, kind):
+    """creates the configured entities and hands each to the hub's set_<key>_<kind>"""
+    hub = await cg.get_variable(config[CONF_ELSNER_AREXA_ID])
+    for key in types:
+        if key in config:
+            cg.add(getattr(hub, f"set_{key}_{kind}")(await new_entity(config[key])))
 
 
 def validate_pairing(value):
@@ -52,8 +66,8 @@ def off_or(validator):
     return validate
 
 
-# The settings made on the RC (its manual: "Einstellung der Automatik"), the station acts on them. Only for the window
-# text sensor: the component can't read or change them. The defaults are the factory settings. To see them on the RC:
+# The settings made on the RC (its manual: "Einstellung der Automatik"), the station acts on them. Only for the
+# window's state (cover and text sensor): the component can't read or change them. The defaults are the factory settings. To see them on the RC:
 # hold SET for 3 s while it shows the temperatures or the weather values.
 SETTINGS_SCHEMA = cv.Schema(
     {
@@ -80,10 +94,8 @@ CONFIG_SCHEMA = cv.Schema(
             cv.frequency, cv.float_range(min=867.9e6, max=868.5e6)
         ),
         cv.Optional(CONF_OUTPUT_POWER, default=11): cv.float_range(min=-30.0, max=11.0),
-        # The chip's input attenuator. With the station a few metres away, most of its packets are lost at 0dB and
-        # nearly all arrive at 6dB (README: Accuracy). 0dB for a station far away (the chip then hears 6 dB weaker
-        # signals).
-        cv.Optional(CONF_RX_ATTENUATION, default="6dB"): cv.one_of(*RX_ATTENUATIONS),
+        # the chip's input attenuator: when to change it is in the README (How it works)
+        cv.Optional(CONF_RX_ATTENUATION, default="6dB"): cv.enum(cc1101.RX_ATTENUATION, upper=False),
         # auto: learn it from the RC's packets. Or fix it (the value of the pairing text sensor), then the buttons
         # work as soon as any Arexa packet brought the counter.
         cv.Optional(CONF_PAIRING, default="auto"): validate_pairing,
@@ -99,13 +111,7 @@ async def to_code(config):
     cg.add(var.set_radio(radio))
     cg.add(var.set_frequency(config[CONF_FREQUENCY]))
     cg.add(var.set_output_power(config[CONF_OUTPUT_POWER]))
-    cg.add(
-        var.set_rx_attenuation(
-            cg.RawExpression(
-                f"static_cast<esphome::cc1101::RxAttenuation>({RX_ATTENUATIONS.index(config[CONF_RX_ATTENUATION])})"
-            )
-        )
-    )
+    cg.add(var.set_rx_attenuation(config[CONF_RX_ATTENUATION]))
     settings = config[CONF_SETTINGS]
     for key in (CONF_OPEN_ABOVE, CONF_OUTSIDE_LOCK, CONF_WIND_ALARM):
         if settings[key] is not None:

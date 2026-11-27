@@ -30,8 +30,10 @@
 
 namespace esphome::elsner_arexa {
 
-// the same order in COMMANDS and COMMAND_NAMES (elsner_arexa.cpp) and COMMANDS (__init__.py)
+// the same order in COMMANDS (elsner_arexa.cpp, with the names and bytes) and COMMANDS (__init__.py)
 enum Command : uint8_t { CMD_OPEN = 0, CMD_STOP, CMD_CLOSE, CMD_AUTO, CMD_MANUAL };
+// the frame's bytes (README: Frame)
+static constexpr int FRAME_LEN = 38;
 
 // Elsner Arexa window control (RC handset + weather station) on a CC1101 in packet mode.
 // Listens to the RC and the station, learns the pairing (system ID, both addresses) from the RC's own packets and the
@@ -41,7 +43,7 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
   void set_radio(cc1101::CC1101Component *radio) { this->radio_ = radio; }
   void set_frequency(float frequency) { this->frequency_ = frequency; }
   void set_output_power(float power) { this->output_power_ = power; }
-  // the chip's input attenuator (README: Accuracy): 6 dB unless the station is far away
+  // the chip's input attenuator (README: How it works)
   void set_rx_attenuation(cc1101::RxAttenuation a) { this->rx_attenuation_ = a; }
   // the pairing (bytes 8..16, optionally the counter's check byte) to use instead of learning it; see the README
   void set_fixed_pairing(const std::vector<uint8_t> &pairing);
@@ -68,10 +70,10 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
   // Puts the radio back into Arexa receive mode. Call it after something else used the same CC1101
   // (for example a remote_transmitter in OOK mode).
   void start_listening();
-  // Sends an RC command (current counter, random seed) until the station answers it: a new counter every 300 ms, at
-  // most 4 sends. Without a counter (no packet heard since the start) or without any answer, it first announces a new
+  // Sends an RC command (current counter, random seed) until the station answers it (README: Sending and its
+  // result). Without a counter (no packet heard since the start) or without any answer, it first announces a new
   // counter block as the RC does (a resync) and then sends the command. The result goes to the log and the last
-  // command text sensor. False if the pairing is not known yet.
+  // command text sensor. False if it was not sent.
   bool send_command(Command cmd);
 
 #ifdef USE_SENSOR
@@ -133,11 +135,12 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
   void publish_position_();
 
   cc1101::CC1101Component *radio_{nullptr};
-  float frequency_{868.19e6f};
-  float output_power_{11.0f};
-  cc1101::RxAttenuation rx_attenuation_{cc1101::RxAttenuation::RX_ATTENUATION_6DB};
+  // always set from the configuration: the defaults are in __init__.py
+  float frequency_{0};
+  float output_power_{0};
+  cc1101::RxAttenuation rx_attenuation_{};
   struct Received {
-    uint8_t bytes[36];  // frame bytes 2..37
+    uint8_t bytes[FRAME_LEN - 2];  // frame bytes 2..37
     float rssi;
     float freq_offset;
   };
@@ -152,14 +155,14 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
   uint16_t sent_n_{0};  // the counter of the current send
   uint32_t send_ms_{0};  // when the current send started
   bool answered_{false};  // the station answered some send of this command (for a mode command: with the old mode)
-  uint8_t frame_[38]{};
+  uint8_t frame_[FRAME_LEN]{};
 
   // learned from the RC's status packets, or fixed in the configuration
   bool learned_{false};
   bool fixed_{false};
   uint8_t pairing_[9]{};  // values of bytes 8..16 of the RC's packets: system ID, addresses, device type
-  uint8_t rc_address_{0};
-  uint8_t station_address_{0};
+  uint8_t rc_address_() const { return this->pairing_[2]; }
+  uint8_t station_address_() const { return this->pairing_[7]; }
   // the counter (README: Counter): the current one, and the check byte of my system (-1: not known yet)
   bool have_counter_{false};
   uint16_t n_{0};
@@ -170,6 +173,7 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
   float outside_lock_{NAN};
   float wind_limit_{NAN};
   bool rain_alarm_{true};
+  // my window's timing (2026-11-26): the defaults of the cover's options
   uint32_t open_ms_{26000};
   uint32_t close_ms_{19000};
   uint32_t start_delay_ms_{1000};

@@ -10,7 +10,7 @@ release). Ordered by priority.
 - Station: about 90% of its minute answers arrive (141 of about 157 between 11:15 and 13:52 UTC), and 20 to 33% of
   those have at least one bad byte (`..` in Station Raw).
 - 10 Stop presses, 1 s apart: all sent, 8 answers heard (6 clean, 2 with bad bytes at different positions). Same
-  rates as the spontaneous reports, so the losses are reception, not the send path.
+  rates as its minute answers to the RC, so the losses are reception, not the send path.
 
 ## Done
 
