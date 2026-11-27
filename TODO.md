@@ -121,6 +121,19 @@ Not understood: why these two settings. The level is not it (the RC is as strong
 is that the station answers 6.6 ms after another packet. On 2026-11-05 the 433.30 module tuned to 868 MHz got 175 of
 177 answers at -84 dBm: with 24 dB less signal, like a strong attenuator.
 An on-device test script (the ESP pressing its own buttons) crashed in a log call: not looked into.
+Checked afterwards (2026-11-27 morning), nothing changed by it:
+- A normal night on the shipped setup, 170 minutes against the SDR with no test sends: the RC's packets 168 of 171,
+  the station's answers to it 158 of 166, 1 of 341 frames broken.
+- The station's signal against the RC's on the SDR (226 and 53 bursts): carrier +4.8 and +1.6 kHz from my TX,
+  deviation +-40 and +-37 kHz, drift through the packet under 1 kHz, 99% bandwidth 191 and 188 kHz, the same 0.3 ms
+  of plain carrier before the data. So the station sends like the RC. At the gateway it is 8 dB weaker (-66 against
+  -58 dBm with 6 dB), and broken and good station frames have the same RSSI.
+- The DC filter on at IF 203 kHz (39 of 41 the night before) was luck: with 6 dB, DC on 23 of 29 (IF 153) and 23 of
+  27 (IF 203), DC off 24 of 24 and 24 of 25.
+- The ESP's Wi-Fi modem kept awake instead of sleeping between beacons: 10 of 26 against 7 of 24 with the old
+  settings, 10 of 12 against 12 of 13 with the shipped ones.
+The station nearly always sends within 25 ms of another packet, so "the station's" and "right after another packet"
+cannot be told apart from this data.
 
 ## Low
 
