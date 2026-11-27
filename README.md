@@ -59,7 +59,7 @@ The full example with all sensors is in [examples/elsner-arexa.yaml](examples/el
 |---|---|
 | `sensor` | `inside_temperature`, `outside_temperature`, `wind`, `brightness`, `rain_sensor`, `rc_rssi`, `station_rssi`, `rc_freq_offset`, `station_freq_offset`, and `raw_inside`, `raw_outside`, `raw_brightness` (for calibration) |
 | `binary_sensor` | `rain` (the station's rain alarm), `wind_alarm`, `auto_mode` (on in automatic mode) |
-| `switch` | `auto_mode` (on: automatic, off: manual; it shows the station's mode) |
+| `switch` | `auto_mode` (on: automatic, off: manual; it shows the station's mode, and follows a command from the RC or the gateway at once) |
 | `cover` | the window: open, close, stop, and a position (see Window position); `open_duration`, `close_duration`, `start_delay` |
 | `button` | `open`, `stop`, `close`, `auto`, `manual` |
 | `event` | `remote` (event types `open`, `stop`, `close`, `auto`, `manual`; one event per press: the RC's repeats have the same counter) |

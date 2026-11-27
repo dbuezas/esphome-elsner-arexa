@@ -11,7 +11,7 @@ ArexaAutoModeSwitch = elsner_arexa_ns.class_("ArexaAutoModeSwitch", switch.Switc
 CONFIG_SCHEMA = cv.Schema(
     {
         cv.GenerateID(CONF_ELSNER_AREXA_ID): cv.use_id(ElsnerArexa),
-        # on: automatic mode, off: manual (the state follows the station)
+        # on: automatic mode, off: manual (the station's mode; right after a command, the command's)
         cv.Optional("auto_mode"): switch.switch_schema(ArexaAutoModeSwitch, icon="mdi:refresh-auto"),
     }
 )

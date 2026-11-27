@@ -513,6 +513,7 @@ bool ElsnerArexa::send_command(Command cmd) {
     this->undo_dir_ = this->dir_;
     this->undo_ms_ = this->move_ms_;
     this->undo_target_ = this->target_;
+    this->undo_auto_ = this->auto_mode_on_;
     this->moved_ = true;
     this->window_command_(cmd);
   }
@@ -526,12 +527,14 @@ void ElsnerArexa::finish_(const char *result) {
   else
     ESP_LOGW(TAG, "%s: %s", COMMANDS[this->cmd_].name, result);
   if (this->moved_ && !confirmed) {
-    // the station never took it: back to the position as it was (and still is, if it was moving)
+    // the station never took it: back to the position as it was (and still is, if it was moving), and the mode
     this->pos_ = this->undo_pos_;
     this->dir_ = this->undo_dir_;
     this->move_ms_ = this->undo_ms_;
     this->target_ = this->undo_target_;
+    this->auto_mode_on_ = this->undo_auto_;
     this->publish_position_();
+    this->publish_auto_mode_();
   }
   this->moved_ = false;
 #ifdef USE_TEXT_SENSOR
@@ -598,18 +601,24 @@ void ElsnerArexa::new_send_() {
 void ElsnerArexa::publish_mode_(uint8_t mode) {
   if (mode != MODE_MANUAL && mode != MODE_AUTO)
     return;
-  const bool automatic = mode == MODE_AUTO;
   // the station answers a command with its mode from before it: for 5 s the command says which mode it is in
   if (millis() - this->command_ms_ > 5000)
-    this->auto_mode_on_ = automatic;
+    this->auto_mode_on_ = mode == MODE_AUTO;
   this->window_update_();
+  this->publish_auto_mode_();
+}
+
+// The mode sensor and switch show auto_mode_on_: the station's mode, or the last command's for the first 5 s.
+void ElsnerArexa::publish_auto_mode_() {
+  if (this->auto_mode_on_ < 0)
+    return;
 #ifdef USE_BINARY_SENSOR
   if (this->auto_mode_ != nullptr)
-    this->auto_mode_->publish_state(automatic);
+    this->auto_mode_->publish_state(this->auto_mode_on_);
 #endif
 #ifdef USE_SWITCH
   if (this->auto_mode_switch_ != nullptr)
-    this->auto_mode_switch_->publish_state(automatic);
+    this->auto_mode_switch_->publish_state(this->auto_mode_on_);
 #endif
 }
 
@@ -628,10 +637,12 @@ void ElsnerArexa::window_command_(int cmd) {
   this->command_ms_ = millis();
   if (cmd == CMD_AUTO || cmd == CMD_MANUAL) {
     this->auto_mode_on_ = cmd == CMD_AUTO;
+    this->publish_auto_mode_();
     this->window_update_(this->start_delay_ms_);
     return;
   }
   this->auto_mode_on_ = 0;
+  this->publish_auto_mode_();
   this->target_ = NAN;
   if (this->alarm_()) {
     this->set_window_(0);  // the station ignores the buttons

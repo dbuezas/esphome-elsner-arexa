@@ -126,6 +126,7 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
   void write_register_(uint8_t address, uint8_t value);
   void publish_frame_(const char *kind, float rssi, const uint8_t *c);
   void publish_mode_(uint8_t mode);
+  void publish_auto_mode_();
   bool alarm_();
   void window_command_(int cmd);
   void window_update_(uint32_t delay = 0);
@@ -184,14 +185,15 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
   int8_t dir_{0};
   uint32_t move_ms_{0};
   float target_{NAN};  // stop here (move_to between 0 and 1)
-  // the position before the command being sent, to undo it if the station never answers
+  // the position and mode before the command being sent, to undo them if the station never answers
   bool moved_{false};
   float undo_pos_{NAN};
   int8_t undo_dir_{0};
   uint32_t undo_ms_{0};
   float undo_target_{NAN};
+  int8_t undo_auto_{-1};
   uint32_t publish_ms_{0};
-  int8_t auto_mode_on_{-1};  // the station's mode: -1 not heard yet
+  int8_t auto_mode_on_{-1};  // the station's mode (after a command: the command's): -1 not heard yet
   int8_t warm_{-1};    // A: the inside temperature was above open_above and not yet 2 °C below it (-1: not known)
   int8_t locked_{-1};  // B: the outside temperature was below outside_lock and not yet 2 °C above it
   bool raining_{false};
@@ -254,8 +256,7 @@ class ArexaButton : public button::Button, public Parented<ElsnerArexa> {
 #endif
 
 #ifdef USE_SWITCH
-// on: automatic mode, off: manual. Its state is the station's (byte 25): the station answers the second mode send
-// with the new mode within a second.
+// on: automatic mode, off: manual. Its state is the station's (byte 25), and right after a command the command's.
 class ArexaAutoModeSwitch : public switch_::Switch, public Parented<ElsnerArexa> {
  protected:
   void write_state(bool state) override { this->parent_->send_command(state ? CMD_AUTO : CMD_MANUAL); }
