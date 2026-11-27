@@ -125,8 +125,8 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
   void publish_mode_(uint8_t mode);
   bool alarm_();
   void window_command_(int cmd);
-  void window_update_();
-  void set_window_(int8_t state);
+  void window_update_(uint32_t delay = 0);
+  void set_window_(int8_t state, uint32_t delay = 0);
   float position_();
   void move_(int8_t dir, uint32_t delay);
   void publish_position_();
@@ -195,7 +195,7 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
   bool wind_flag_{false};
   bool windy_{false};  // C: the wind was above wind_alarm in the last 5 minutes
   uint32_t windy_ms_{0};
-  uint32_t command_ms_{0};  // the last open, stop or close
+  uint32_t command_ms_{0};  // the last command
   ESPPreferenceObject position_pref_;
 
 

@@ -118,7 +118,7 @@ elsner_arexa:
 **Window position:** the `cover` follows the window's position the same way, timed: the motor starts `start_delay`
 after an open or close (a stop is at once), and the window takes `open_duration` to open and `close_duration` to
 close. A position in between is an open or close, then a stop on time. The station's own moves (alarms, automatic
-mode) count from the packet that shows them. The position survives a restart.
+mode) count from the packet that shows them; after an auto command, from the command. The position survives a restart.
 
 ```yaml
 cover:

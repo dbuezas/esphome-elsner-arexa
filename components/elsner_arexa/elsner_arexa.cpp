@@ -452,8 +452,11 @@ void ElsnerArexa::check_answer_(const uint8_t *v) {
   const bool done = mode ? v[25] == (this->cmd_ == CMD_AUTO ? 0xbf : 0xb3) : this->answered_ || v[25] != 0xbf;
   if (done) {
     // also from a repaired packet: it matched the exact counter sent (often the only answer with the new mode)
+    const int cmd = this->cmd_;
     this->publish_mode_(v[25]);
     this->finish_("confirmed");
+    if (mode)
+      this->window_command_(cmd);
   } else {
     this->answered_ = true;
     this->copies_ = 3;
@@ -573,8 +576,8 @@ void ElsnerArexa::new_send_() {
 void ElsnerArexa::publish_mode_(uint8_t mode) {
   if (mode != 0xb3 && mode != 0xbf)
     return;
-  // the station answers a command with its mode from before it: after an open, stop or close it is in manual mode
-  if (mode == 0xb3 || millis() - this->command_ms_ > 5000)
+  // the station answers a command with its mode from before it: for 5 s the command says which mode it is in
+  if (millis() - this->command_ms_ > 5000)
     this->auto_mode_on_ = mode == 0xbf;
   this->window_update_();
 #ifdef USE_BINARY_SENSOR
@@ -596,12 +599,15 @@ bool ElsnerArexa::alarm_() {
   return (this->rain_alarm_ && this->raining_) || (!std::isnan(this->wind_limit_) && (this->windy_ || this->wind_flag_));
 }
 
-// A confirmed open, stop or close, from the gateway or the RC. Each one puts the station in manual mode. The motor
-// starts start_delay after an open or close; a stop is at once.
+// A command, from the gateway or the RC. An open, stop or close puts the station in manual mode. The motor starts
+// start_delay after an open or close; a stop is at once. In automatic mode the station acts on its settings at once.
 void ElsnerArexa::window_command_(int cmd) {
-  if (cmd != CMD_OPEN && cmd != CMD_STOP && cmd != CMD_CLOSE)
-    return;
   this->command_ms_ = millis();
+  if (cmd == CMD_AUTO || cmd == CMD_MANUAL) {
+    this->auto_mode_on_ = cmd == CMD_AUTO;
+    this->window_update_(this->start_delay_ms_);
+    return;
+  }
   this->auto_mode_on_ = 0;
   this->target_ = NAN;
   if (this->alarm_()) {
@@ -621,29 +627,30 @@ void ElsnerArexa::window_command_(int cmd) {
 
 // After new values: the alarms, and in automatic mode the RC's settings A (open above the inside temperature, close
 // 2 °C below it) and B (closed below the outside temperature, until 2 °C above it).
-void ElsnerArexa::window_update_() {
+void ElsnerArexa::window_update_(uint32_t delay) {
   if (this->alarm_()) {
-    this->set_window_(0);
+    this->set_window_(0, delay);
     return;
   }
   if (this->auto_mode_on_ != 1)
     return;  // manual mode: only the buttons move it
   if (this->locked_ == 1 || this->warm_ == 0)
-    this->set_window_(0);
+    this->set_window_(0, delay);
   else if (this->locked_ == 0 && this->warm_ == 1)
-    this->set_window_(1);
+    this->set_window_(1, delay);
   // else: not known yet (just started, between the two limits), or no temperature control: it stays as it is
 }
 
-// The station's own move, all the way: seen up to a minute late (its packet), so from now without the start delay.
-void ElsnerArexa::set_window_(int8_t state) {
+// The station's own move, all the way: after its packet (seen up to a minute late) from now, after a mode command
+// with the start delay.
+void ElsnerArexa::set_window_(int8_t state, uint32_t delay) {
   const int8_t dir = state ? 1 : -1;
   const float p = this->position_();
   if (dir == this->dir_ || p == (state ? 1.0f : 0.0f))
     return;
   ESP_LOGD(TAG, "Window: the station %s it", state ? "opens" : "closes");
   this->target_ = NAN;
-  this->move_(dir, 0);
+  this->move_(dir, delay);
 }
 
 // The position now: from pos_ at move_ms_, at the speed of the direction; NAN if not known.
