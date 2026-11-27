@@ -3,13 +3,11 @@ from esphome.components import event
 import esphome.config_validation as cv
 from esphome.const import DEVICE_CLASS_BUTTON
 
-from . import CONF_ELSNER_AREXA_ID, ElsnerArexa
+from . import COMMANDS, CONF_ELSNER_AREXA_ID, ElsnerArexa
 
 DEPENDENCIES = ["elsner_arexa"]
 
 CONF_REMOTE = "remote"
-# in the order of the Command enum (elsner_arexa.h)
-EVENT_TYPES = ["open", "stop", "close", "auto", "manual"]
 
 CONFIG_SCHEMA = cv.Schema(
     {
@@ -23,5 +21,5 @@ CONFIG_SCHEMA = cv.Schema(
 async def to_code(config):
     hub = await cg.get_variable(config[CONF_ELSNER_AREXA_ID])
     if CONF_REMOTE in config:
-        e = await event.new_event(config[CONF_REMOTE], event_types=EVENT_TYPES)
+        e = await event.new_event(config[CONF_REMOTE], event_types=COMMANDS)
         cg.add(hub.set_remote_event(e))

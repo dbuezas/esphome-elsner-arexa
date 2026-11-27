@@ -17,6 +17,8 @@ CONF_OPEN_ABOVE = "open_above"
 CONF_OUTSIDE_LOCK = "outside_lock"
 CONF_WIND_ALARM = "wind_alarm"
 CONF_RAIN_ALARM = "rain_alarm"
+# the RC's commands, in the order of the Command enum (elsner_arexa.h)
+COMMANDS = ["open", "stop", "close", "auto", "manual"]
 
 elsner_arexa_ns = cg.esphome_ns.namespace("elsner_arexa")
 ElsnerArexa = elsner_arexa_ns.class_("ElsnerArexa", cg.Component)

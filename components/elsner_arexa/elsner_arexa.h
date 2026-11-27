@@ -30,7 +30,7 @@
 
 namespace esphome::elsner_arexa {
 
-// the same order in COMMANDS and COMMAND_NAMES (elsner_arexa.cpp), TYPES (button.py) and EVENT_TYPES (event.py)
+// the same order in COMMANDS and COMMAND_NAMES (elsner_arexa.cpp) and COMMANDS (__init__.py)
 enum Command : uint8_t { CMD_OPEN = 0, CMD_STOP, CMD_CLOSE, CMD_AUTO, CMD_MANUAL };
 
 // Elsner Arexa window control (RC handset + weather station) on a CC1101 in packet mode.
@@ -111,7 +111,8 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
 #endif
 
  protected:
-  void decode_(const std::vector<uint8_t> &x, float rssi, float freq_offset);
+  void decode_(const uint8_t *x, float rssi, float freq_offset);
+  void use_pairing_(const uint8_t *pairing);
   void learn_pairing_(const uint8_t *v);
   void take_counter_(const uint8_t *v, bool from_station);
   void decode_rc_(const uint8_t *v, const uint8_t *u, float rssi, float freq_offset);
@@ -136,7 +137,7 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
   float output_power_{11.0f};
   cc1101::RxAttenuation rx_attenuation_{cc1101::RxAttenuation::RX_ATTENUATION_6DB};
   struct Received {
-    std::vector<uint8_t> bytes;
+    uint8_t bytes[36];  // frame bytes 2..37
     float rssi;
     float freq_offset;
   };
@@ -151,9 +152,7 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
   uint16_t sent_n_{0};  // the counter of the current send
   uint32_t send_ms_{0};  // when the current send started
   bool answered_{false};  // the station answered some send of this command (for a mode command: with the old mode)
-  std::vector<uint8_t> frame_;
-
-  void use_pairing_(const uint8_t *pairing);
+  uint8_t frame_[38]{};
 
   // learned from the RC's status packets, or fixed in the configuration
   bool learned_{false};
@@ -197,7 +196,6 @@ class ElsnerArexa : public Component, public cc1101::CC1101Listener {
   uint32_t windy_ms_{0};
   uint32_t command_ms_{0};  // the last command
   ESPPreferenceObject position_pref_;
-
 
   int last_remote_{-1};
   int last_remote_counter_{-1};  // the counter of the last RC command

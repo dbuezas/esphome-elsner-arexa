@@ -35,19 +35,15 @@ _offset = sensor.sensor_schema(
     icon="mdi:sine-wave",
     entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
 )
+_temperature = sensor.sensor_schema(
+    unit_of_measurement=UNIT_CELSIUS,
+    accuracy_decimals=1,
+    device_class=DEVICE_CLASS_TEMPERATURE,
+    state_class=STATE_CLASS_MEASUREMENT,
+)
 TYPES = {
-    "inside_temperature": sensor.sensor_schema(
-        unit_of_measurement=UNIT_CELSIUS,
-        accuracy_decimals=1,
-        device_class=DEVICE_CLASS_TEMPERATURE,
-        state_class=STATE_CLASS_MEASUREMENT,
-    ),
-    "outside_temperature": sensor.sensor_schema(
-        unit_of_measurement=UNIT_CELSIUS,
-        accuracy_decimals=1,
-        device_class=DEVICE_CLASS_TEMPERATURE,
-        state_class=STATE_CLASS_MEASUREMENT,
-    ),
+    "inside_temperature": _temperature,
+    "outside_temperature": _temperature,
     "wind": sensor.sensor_schema(
         unit_of_measurement=UNIT_METER_PER_SECOND,
         accuracy_decimals=1,
