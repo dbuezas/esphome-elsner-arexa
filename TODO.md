@@ -132,6 +132,15 @@ Checked afterwards (2026-11-27 morning), nothing changed by it:
   27 (IF 203), DC off 24 of 24 and 24 of 25.
 - The ESP's Wi-Fi modem kept awake instead of sleeping between beacons: 10 of 26 against 7 of 24 with the old
   settings, 10 of 12 against 12 of 13 with the shipped ones.
+- The likely cause of the overload (not proven; the README has it): an LTE 800 downlink at 811-821 MHz. The 868
+  chip tuned there reads -54 dBm in 232 kHz (peaks -42; about -38 dBm over the block) against -62 dBm for the
+  station; the SDR shows the block 35 dB over its floor, clipping. 796, 805, 840 and 780 MHz: nothing. The phone's
+  uplink block (852-862 MHz) was not measured. The chip's idle RSSI is no use as a noise measurement (flat -77 dBm at
+  0 dB, -92 at 6 dB, -86 at 18 dB; it moves 23 dB with the DVGA limit). The test: an 868 MHz SAW filter, then 0 dB.
+- Carrier sense for the sync word (set_carrier_sense_above_threshold; the SYNC_MODE_*_CS values of the driver do not
+  switch it on): the false starts on noise go from 19 a minute to 0, the answers stay the same (17 of 18 without, 16
+  and 17 of 18 with -7 and 0 dB) and at +7 dB a third is lost. Not used. Sync on 15 of 16 bits: 309 false starts a
+  minute.
 The station nearly always sends within 25 ms of another packet, so "the station's" and "right after another packet"
 cannot be told apart from this data.
 

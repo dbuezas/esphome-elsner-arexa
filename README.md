@@ -179,11 +179,23 @@ default 16 ms misses most answers).
 Two receive settings decide whether the station's packets arrive (measured against an SDR that decoded every packet,
 the setups alternating per send, 2026-11-27): the chip's input attenuator at 6 dB (`rx_attenuation`) and its DC
 blocking filter off. With the driver's defaults for both, about a third of the station's answers arrived; with the
-attenuator 83%, with the filter off 56 to 78%, with both 97%. The RC's packets arrive either way: the station
-answers a few ms after another packet, the RC sends after a minute of silence. Lower gain behind the attenuator
-(LNA or DVGA limits, a gain fixed below the maximum) did not help, nor did a wider filter, another deviation or
-IF, the AGC frozen on the sync word, or TI's 100 kBaud settings. With the station far away, try `rx_attenuation: 0dB`
-(the chip then hears 6 dB weaker signals). Sending: the chip does
+attenuator 83%, with the filter off 56 to 78%, with both 97%. Lower gain behind the attenuator (LNA or DVGA limits,
+a gain fixed below the maximum) did not help, nor did a wider filter, another deviation or IF, the AGC frozen on the
+sync word, or TI's 100 kBaud settings.
+
+Why the attenuator: most likely a strong signal next to the band overloads the chip's input, and 6 dB less at the
+input cuts what such a signal produces inside the chip by 12 dB or more, while the packets lose only 6 dB. Here that
+signal is an LTE 800 downlink at 811 to 821 MHz: tuned there, the same chip reads -54 dBm in its 232 kHz filter
+(about -38 dBm over the whole block, always on), against -62 dBm for the station and -54 dBm for the RC. That fits
+what was measured (only the input attenuator helps, the weaker station suffers and the RC does not, an SDR hears
+everything), but it is not proven: I have not tried a filter. So `rx_attenuation`:
+- `6dB` (default): for a house with a mobile mast in reach, like mine.
+- `0dB`: the chip hears 6 dB weaker signals. Try it with the station far away, or where the packets arrive well
+  without the attenuator (compare `ok`, `repaired` and `bad` in `last_frame`).
+- `12dB`, `18dB`: no better here (89 to 94%, 87%).
+An 868 MHz band-pass (SAW) filter between antenna and module should do the same without the loss: untested.
+
+Sending: the chip does
 the Manchester coding itself (an ESP8266 cannot time 10 µs chips in software while WiFi runs).
 
 ## Protocol
